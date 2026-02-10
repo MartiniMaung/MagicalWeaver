@@ -1,6 +1,7 @@
 # weaver/cli.py
 from typing import Optional
 
+import os
 import typer
 from rich.console import Console
 
@@ -11,6 +12,7 @@ app = typer.Typer(
 )
 
 console = Console()
+
 
 @app.command()
 def hello(
@@ -28,10 +30,43 @@ def hello(
         style="dim white",
     )
 
+
 @app.command()
 def version():
     """Show the current version of MagicalWeaver."""
     console.print("MagicalWeaver [bold]0.0.1-dev[/bold] — the weave has just begun.")
+
+
+@app.command()
+def evolve(
+    pattern: str = typer.Argument(..., help="Path to Loom pattern JSON file"),
+    intent: str = typer.Option(..., help="User intent/description (e.g. 'secure ecommerce backend')"),
+    iterations: int = typer.Option(3, "--iterations", "-i", help="Number of evolution steps", min=1, max=10),
+):
+    """Evolve a Loom pattern with emergent consciousness (placeholder)."""
+    console.rule("Evolving Pattern", style="bold magenta")
+
+    # Check if the file actually exists
+    if not os.path.exists(pattern):
+        console.print(f"[red bold]Error:[/red bold] Pattern file not found: {pattern}")
+        raise typer.Exit(code=1)
+
+    # If file exists, proceed with placeholder evolution
+    console.print(f"[bold]Loading pattern:[/bold] {pattern}")
+    console.print(f"[bold]Intent:[/bold] {intent}")
+    console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
+
+    for step in range(1, iterations + 1):
+        console.print(f"[cyan]Step {step}/{iterations}[/cyan]")
+        console.print("  Perceived current state...")
+        console.print("  Planned mutation: injecting novelty...")
+        console.print("  Acted: swapped component with emerging alternative")
+        console.print("  Learned: robustness +0.5, novelty +1.2 (mock scores)\n")
+
+    console.print("[bold green]Evolution complete![/bold green]")
+    console.print("Emergent variant ready. (Real implementation coming soon...)")
+    console.print("Next: integrate actual Loom JSON parsing + loop logic.")
+
 
 if __name__ == "__main__":
     app()
