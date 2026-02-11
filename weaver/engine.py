@@ -14,14 +14,14 @@ def evolve_pattern(
     iterations: int = 3
 ) -> Dict[str, Any]:
     """
-    Core evolution function: loads pattern, runs mock evolution steps,
-    returns structured result for CLI or future use.
+    Core function to evolve a pattern: load JSON, run mock steps,
+    return structured result (for CLI display, saving, or future extensions).
     """
-    # Validate file
+    # 1. Validate file existence
     if not os.path.exists(pattern_path):
         raise FileNotFoundError(f"Pattern file not found: {pattern_path}")
 
-    # Load JSON
+    # 2. Load JSON
     try:
         with open(pattern_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -30,16 +30,16 @@ def evolve_pattern(
     except Exception as e:
         raise RuntimeError(f"Failed to load pattern: {str(e)}")
 
-    # Display basic info
+    # Display loading info
     console.print(f"[bold green]Pattern loaded successfully[/bold green] ({len(str(data))} chars)")
     if isinstance(data, dict):
         console.print(f"[bold]Top-level keys:[/bold] {list(data.keys())}")
     else:
-        console.print("[bold]Top-level type:[/bold] [list or other]")
+        console.print("[bold]Data type:[/bold] [list or other]")
     console.print(f"[bold]Intent:[/bold] {intent}")
     console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
 
-    # Mock evolution steps (will become real in future)
+    # 3. Mock evolution steps (placeholder for real mutations/reflection)
     steps: List[Dict[str, str]] = []
     for step_num in range(1, iterations + 1):
         step = {
@@ -59,7 +59,7 @@ def evolve_pattern(
 
     console.print("[bold green]Evolution complete![/bold green]")
 
-    # Return structured result (useful for saving, future extensions)
+    # Return structured result
     return {
         "original_data": data,
         "intent": intent,

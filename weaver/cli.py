@@ -52,7 +52,7 @@ def evolve(
         from weaver.engine import evolve_pattern
         result = evolve_pattern(pattern, intent, iterations)
 
-        # Future: display or save result more nicely
+        # Future: pretty-print result, save to file, etc.
         console.print("Emergent variant ready. (Real implementation coming soon...)")
         console.print("Next: integrate actual Loom JSON parsing + loop logic.")
     except FileNotFoundError as e:
