@@ -42,8 +42,9 @@ def version():
 @app.command()
 def evolve(
     pattern: str = typer.Argument(..., help="Path to Loom pattern JSON file"),
-    intent: str = typer.Option(..., help="User intent/description (e.g. 'secure ecommerce backend')"),
-    iterations: int = typer.Option(3, "--iterations", "-i", help="Number of evolution steps", min=1, max=10),
+    intent: str = typer.Option(..., help="User intent/description"),
+    iterations: int = typer.Option(3, "--iterations", "-i", min=1, max=10),
+    output: str = typer.Option("evolved.json", "--output", "-o", help="Save evolved pattern to this file")
 ):
     """Evolve a Loom pattern with emergent consciousness."""
     console.rule("Evolving Pattern", style="bold magenta")
@@ -52,15 +53,19 @@ def evolve(
         from weaver.engine import evolve_pattern
         result = evolve_pattern(pattern, intent, iterations)
 
-        # Future: pretty-print result, save to file, etc.
+        # Save result
+        import json
+        import os
+        console.print(f"[yellow]DEBUG: Saving result to {output}[/yellow]")
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+        console.print(f"[bold green]Evolved pattern saved to:[/bold green] {output}")
+        console.print(f"[dim]File size: {os.path.getsize(output)} bytes[/dim]")
+        console.print("[dim]First few chars of file:[/dim]")
+        with open(output, "r") as f:
+            console.print(f.read(200) + "...")    
+   
         console.print("Emergent variant ready. (Real implementation coming soon...)")
-        console.print("Next: integrate actual Loom JSON parsing + loop logic.")
-    except FileNotFoundError as e:
-        console.print(f"[red bold]Error:[/red bold] {str(e)}")
-        raise typer.Exit(code=1)
-    except ValueError as e:
-        console.print(f"[red bold]Error:[/red bold] {str(e)}")
-        raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"[red bold]Error:[/red bold] {str(e)}")
         raise typer.Exit(code=1)

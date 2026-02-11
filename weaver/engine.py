@@ -29,7 +29,7 @@ def evolve_pattern(
     try:
         with open(pattern_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        original_data = data.copy()  # Keep original for return
+        original_data = data.copy()
     except json.JSONDecodeError:
         raise ValueError("Invalid JSON format in pattern file")
     except Exception as e:
@@ -103,16 +103,14 @@ Output **JSON only**, no extra text or explanations:
             # Robust JSON extraction
             start = llm_text.find('{')
             end = llm_text.rfind('}') + 1
-            if start != -1 and end != 0:
-                json_str = llm_text[start:end]
-            else:
-                json_str = llm_text
+            if start == -1 or end == 0:
+                raise ValueError("No JSON block found")
 
-            console.print("[yellow]DEBUG: Attempting JSON parse...[/yellow]")
+            json_str = llm_text[start:end]
             mutation = json.loads(json_str)
 
-            planned = mutation.get("planned", "No suggestion from LLM")
-            acted = mutation.get("acted", "applied LLM suggestion")
+            planned = mutation.get("planned", "No suggestion")
+            acted = mutation.get("acted", "applied")
             learned = mutation.get("learned", "impact estimated")
 
             console.print("[yellow]DEBUG: Mutation parsed OK[/yellow]")
@@ -123,18 +121,12 @@ Output **JSON only**, no extra text or explanations:
             acted = f"applied fallback: {planned}"
             learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
 
-        # Print step results
         console.print(f"[cyan]Step {step_num}/{iterations}[/cyan]")
         console.print(f"  Perceived current state...")
         console.print(f"  Planned mutation: {planned}...")
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
 
-        # Apply the mutation cumulatively
-        data = apply_llm_mutation(data, planned)
-        console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
-
-        # Update for next iteration
         current_state_summary += f"\nStep {step_num}: {planned}"
         steps.append({
             "step": step_num,
@@ -146,39 +138,11 @@ Output **JSON only**, no extra text or explanations:
 
     console.print("[bold green]Evolution complete![/bold green]")
 
-   
-def apply_llm_mutation(data: Dict, planned: str) -> Dict:
-    """
-    Apply LLM-suggested mutation to the data dict (placeholder logic — expand later).
-    Returns updated copy.
-    """
-    mutated = data.copy()
-
-    # Simple keyword-based application (improve with structured LLM output in future)
-    planned_lower = planned.lower()
-    if "opa" in planned_lower or "policy" in planned_lower:
-        mutated.setdefault("components", {})["policy_engine"] = "OPA"
-    elif "load balancer" in planned_lower or "balancing" in planned_lower:
-        mutated.setdefault("components", {})["load_balancer"] = "NGINX / HAProxy"
-    elif "service mesh" in planned_lower or "istio" in planned_lower:
-        mutated.setdefault("components", {})["service_mesh"] = "Istio"
-    elif "circuit breaker" in planned_lower or "resilience" in planned_lower:
-        mutated.setdefault("components", {})["circuit_breaker"] = "Hystrix / Resilience4j"
-    # Add more rules as needed (e.g. WAF, monitoring)
-
-    # Update scores (simple increment)
-    if "scores" in mutated:
-        mutated["scores"]["security"] = mutated["scores"].get("security", 0) + 0.8
-        mutated["scores"]["scalability"] = mutated["scores"].get("scalability", 0) + 1.0
-
-    return mutated
-
     return {
         "original_data": original_data,
-        "final_mutated_data": data,  # ← now includes cumulative changes
+        "final_data": data,
         "intent": intent,
         "iterations": iterations,
         "evolution_steps": steps,
         "status": "complete"
     }
-    
