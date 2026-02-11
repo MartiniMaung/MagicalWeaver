@@ -5,6 +5,7 @@ import os
 import json
 import typer
 from rich.console import Console
+from weaver.engine import evolve_pattern   # we'll remove this later when using proper imports
 
 app = typer.Typer(
     name="weaver",
@@ -44,41 +45,25 @@ def evolve(
     intent: str = typer.Option(..., help="User intent/description (e.g. 'secure ecommerce backend')"),
     iterations: int = typer.Option(3, "--iterations", "-i", help="Number of evolution steps", min=1, max=10),
 ):
-    """Evolve a Loom pattern with emergent consciousness (placeholder)."""
+    """Evolve a Loom pattern with emergent consciousness."""
     console.rule("Evolving Pattern", style="bold magenta")
 
-    # File existence check
-    if not os.path.exists(pattern):
-        console.print(f"[red bold]Error:[/red bold] Pattern file not found: {pattern}")
-        raise typer.Exit(code=1)
-
-    # Try to load JSON
     try:
-        with open(pattern, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        console.print(f"[bold green]Pattern loaded successfully[/bold green] ({len(str(data))} chars)")
-        console.print(f"[bold]Top-level keys:[/bold] {list(data.keys()) if isinstance(data, dict) else '[list]'}")
-        console.print(f"[bold]Intent:[/bold] {intent}")
-        console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
-    except json.JSONDecodeError:
-        console.print("[red bold]Error:[/red bold] Invalid JSON format in pattern file")
+        from weaver.engine import evolve_pattern
+        result = evolve_pattern(pattern, intent, iterations)
+
+        # Future: display or save result more nicely
+        console.print("Emergent variant ready. (Real implementation coming soon...)")
+        console.print("Next: integrate actual Loom JSON parsing + loop logic.")
+    except FileNotFoundError as e:
+        console.print(f"[red bold]Error:[/red bold] {str(e)}")
+        raise typer.Exit(code=1)
+    except ValueError as e:
+        console.print(f"[red bold]Error:[/red bold] {str(e)}")
         raise typer.Exit(code=1)
     except Exception as e:
-        console.print(f"[red bold]Error:[/red bold] Failed to load pattern: {str(e)}")
+        console.print(f"[red bold]Error:[/red bold] {str(e)}")
         raise typer.Exit(code=1)
-
-    # Mock evolution (placeholder)
-    for step in range(1, iterations + 1):
-        console.print(f"[cyan]Step {step}/{iterations}[/cyan]")
-        console.print("  Perceived current state...")
-        console.print("  Planned mutation: injecting novelty...")
-        console.print("  Acted: swapped component with emerging alternative")
-        console.print("  Learned: robustness +0.5, novelty +1.2 (mock scores)\n")
-
-    console.print("[bold green]Evolution complete![/bold green]")
-    console.print("Emergent variant ready. (Real implementation coming soon...)")
-    console.print("Next: integrate actual Loom JSON parsing + loop logic.")
-
 
 if __name__ == "__main__":
     app()
