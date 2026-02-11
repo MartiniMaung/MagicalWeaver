@@ -29,6 +29,7 @@ def evolve_pattern(
     try:
         with open(pattern_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        original_data = data.copy()  # Keep original for return
     except json.JSONDecodeError:
         raise ValueError("Invalid JSON format in pattern file")
     except Exception as e:
@@ -129,6 +130,10 @@ Output **JSON only**, no extra text or explanations:
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
 
+        # Apply the mutation cumulatively
+        data = apply_llm_mutation(data, planned)
+        console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
+
         # Update for next iteration
         current_state_summary += f"\nStep {step_num}: {planned}"
         steps.append({
@@ -141,10 +146,39 @@ Output **JSON only**, no extra text or explanations:
 
     console.print("[bold green]Evolution complete![/bold green]")
 
+   
+def apply_llm_mutation(data: Dict, planned: str) -> Dict:
+    """
+    Apply LLM-suggested mutation to the data dict (placeholder logic — expand later).
+    Returns updated copy.
+    """
+    mutated = data.copy()
+
+    # Simple keyword-based application (improve with structured LLM output in future)
+    planned_lower = planned.lower()
+    if "opa" in planned_lower or "policy" in planned_lower:
+        mutated.setdefault("components", {})["policy_engine"] = "OPA"
+    elif "load balancer" in planned_lower or "balancing" in planned_lower:
+        mutated.setdefault("components", {})["load_balancer"] = "NGINX / HAProxy"
+    elif "service mesh" in planned_lower or "istio" in planned_lower:
+        mutated.setdefault("components", {})["service_mesh"] = "Istio"
+    elif "circuit breaker" in planned_lower or "resilience" in planned_lower:
+        mutated.setdefault("components", {})["circuit_breaker"] = "Hystrix / Resilience4j"
+    # Add more rules as needed (e.g. WAF, monitoring)
+
+    # Update scores (simple increment)
+    if "scores" in mutated:
+        mutated["scores"]["security"] = mutated["scores"].get("security", 0) + 0.8
+        mutated["scores"]["scalability"] = mutated["scores"].get("scalability", 0) + 1.0
+
+    return mutated
+
     return {
-        "original_data": data,
+        "original_data": original_data,
+        "final_mutated_data": data,  # ← now includes cumulative changes
         "intent": intent,
         "iterations": iterations,
         "evolution_steps": steps,
         "status": "complete"
     }
+    
