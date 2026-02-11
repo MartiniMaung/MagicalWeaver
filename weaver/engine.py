@@ -2,6 +2,7 @@
 import json
 import os
 import ollama
+import random
 from typing import Dict, Any, List
 
 from rich.console import Console
@@ -83,13 +84,20 @@ Output **JSON only**, no extra text:
 
         try:
             response = ollama.chat(
-                model='llama3.1:8b',  # change to your model if different
+                model='llama3.1:8b',
                 messages=[{'role': 'user', 'content': prompt}]
             )
             llm_text = response['message']['content'].strip()
 
-            # Parse LLM's JSON
-            mutation = json.loads(llm_text)
+            # More robust parsing: try to extract JSON block if LLM adds extra text
+            start = llm_text.find('{')
+            end = llm_text.rfind('}') + 1
+            if start != -1 and end != 0:
+                json_str = llm_text[start:end]
+            else:
+                json_str = llm_text
+
+            mutation = json.loads(json_str)
 
             planned = mutation.get("planned", "No suggestion from LLM")
             acted = mutation.get("acted", "applied LLM suggestion")
@@ -99,28 +107,8 @@ Output **JSON only**, no extra text:
             console.print(f"[yellow]Ollama error:[/yellow] {str(e)} — fallback to mock")
             planned = random.choice(mutation_options)
             acted = f"applied fallback: {planned}"
-            learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
-
-        step = {
-            "step": step_num,
-            "perceived": "current state",
-            "planned": planned,
-            "acted": acted,
-            "learned": learned
-        }
-        steps.append(step)
-
-        console.print(f"[cyan]Step {step_num}/{iterations}[/cyan]")
-        console.print(f"  Perceived current state...")
-        console.print(f"  Planned mutation: {planned}...")
-        console.print(f"  Acted: {acted}")
-        console.print(f"  Learned: {learned}\n")
-
-        # Feed back to next prompt
-        current_state_summary += f"\nStep {step_num}: {planned}"
-
-    console.print("[bold green]Evolution complete![/bold green]")
-
+            learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"  
+  
     return {
         "original_data": data,
         "intent": intent,
