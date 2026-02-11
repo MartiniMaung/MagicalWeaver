@@ -2,6 +2,7 @@
 from typing import Optional
 
 import os
+import json
 import typer
 from rich.console import Console
 
@@ -46,16 +47,27 @@ def evolve(
     """Evolve a Loom pattern with emergent consciousness (placeholder)."""
     console.rule("Evolving Pattern", style="bold magenta")
 
-    # Check if the file actually exists
+    # File existence check
     if not os.path.exists(pattern):
         console.print(f"[red bold]Error:[/red bold] Pattern file not found: {pattern}")
         raise typer.Exit(code=1)
 
-    # If file exists, proceed with placeholder evolution
-    console.print(f"[bold]Loading pattern:[/bold] {pattern}")
-    console.print(f"[bold]Intent:[/bold] {intent}")
-    console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
+    # Try to load JSON
+    try:
+        with open(pattern, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        console.print(f"[bold green]Pattern loaded successfully[/bold green] ({len(str(data))} chars)")
+        console.print(f"[bold]Top-level keys:[/bold] {list(data.keys()) if isinstance(data, dict) else '[list]'}")
+        console.print(f"[bold]Intent:[/bold] {intent}")
+        console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
+    except json.JSONDecodeError:
+        console.print("[red bold]Error:[/red bold] Invalid JSON format in pattern file")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red bold]Error:[/red bold] Failed to load pattern: {str(e)}")
+        raise typer.Exit(code=1)
 
+    # Mock evolution (placeholder)
     for step in range(1, iterations + 1):
         console.print(f"[cyan]Step {step}/{iterations}[/cyan]")
         console.print("  Perceived current state...")
