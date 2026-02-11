@@ -1,6 +1,7 @@
 # weaver/engine.py
 import json
 import os
+import ollama
 from typing import Dict, Any, List
 
 from rich.console import Console
@@ -54,6 +55,7 @@ def evolve_pattern(
         f"replace caching with in-memory alternative"
     ]
 
+
     # Evolution steps with variety
     steps: List[Dict[str, str]] = []
     import random
@@ -61,7 +63,6 @@ def evolve_pattern(
         planned = random.choice(mutation_options)
         acted = f"applied mutation: {planned}"
         learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
-
         step = {
             "step": step_num,
             "perceived": "current state",
@@ -70,14 +71,11 @@ def evolve_pattern(
             "learned": learned
         }
         steps.append(step)
-
         console.print(f"[cyan]Step {step_num}/{iterations}[/cyan]")
         console.print(f"  Perceived current state...")
         console.print(f"  Planned mutation: {planned}...")
         console.print(f"  Acted: {acted}")
-        console.print(f"  Learned: {learned}\n")
-
-    console.print("[bold green]Evolution complete![/bold green]")
+        console.print(f"  Learned: {learned}\n") 
 
     return {
         "original_data": data,
