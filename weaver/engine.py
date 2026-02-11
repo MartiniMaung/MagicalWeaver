@@ -56,13 +56,51 @@ def evolve_pattern(
     ]
 
 
-    # Evolution steps with variety
+    # Evolution steps with Ollama LLM planning
     steps: List[Dict[str, str]] = []
-    import random
+    current_state_summary = json.dumps(data, indent=2)[:1500]  # safe truncate
+
     for step_num in range(1, iterations + 1):
-        planned = random.choice(mutation_options)
-        acted = f"applied mutation: {planned}"
-        learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
+        prompt = f"""
+You are an expert OSS architecture agent evolving a pattern.
+Current pattern state (JSON):
+{current_state_summary}
+
+User intent: {intent}
+
+Previous mutations:
+{json.dumps(steps, indent=2) if steps else "None yet"}
+
+Suggest ONE focused, realistic next mutation.
+Improve security, scalability, novelty, cost, etc. based on intent.
+Output **JSON only**, no extra text:
+{{
+  "planned": "short clear description of the change",
+  "acted": "how it was applied",
+  "learned": "estimated impact (e.g. security +1.2, complexity +0.4)"
+}}
+"""
+
+        try:
+            response = ollama.chat(
+                model='llama3.1:8b',  # change to your model if different
+                messages=[{'role': 'user', 'content': prompt}]
+            )
+            llm_text = response['message']['content'].strip()
+
+            # Parse LLM's JSON
+            mutation = json.loads(llm_text)
+
+            planned = mutation.get("planned", "No suggestion from LLM")
+            acted = mutation.get("acted", "applied LLM suggestion")
+            learned = mutation.get("learned", "impact estimated")
+
+        except Exception as e:
+            console.print(f"[yellow]Ollama error:[/yellow] {str(e)} — fallback to mock")
+            planned = random.choice(mutation_options)
+            acted = f"applied fallback: {planned}"
+            learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
+
         step = {
             "step": step_num,
             "perceived": "current state",
@@ -71,11 +109,17 @@ def evolve_pattern(
             "learned": learned
         }
         steps.append(step)
+
         console.print(f"[cyan]Step {step_num}/{iterations}[/cyan]")
         console.print(f"  Perceived current state...")
         console.print(f"  Planned mutation: {planned}...")
         console.print(f"  Acted: {acted}")
-        console.print(f"  Learned: {learned}\n") 
+        console.print(f"  Learned: {learned}\n")
+
+        # Feed back to next prompt
+        current_state_summary += f"\nStep {step_num}: {planned}"
+
+    console.print("[bold green]Evolution complete![/bold green]")
 
     return {
         "original_data": data,
