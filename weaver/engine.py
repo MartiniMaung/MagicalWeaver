@@ -86,31 +86,37 @@ Output **JSON only**, no extra text or explanations:
   "learned": "estimated impact (e.g. security +1.2, complexity +0.4)"
 }}
 """
-
-        console.print("[yellow]DEBUG: Prompt built[/yellow]")
-
+        console.print("[yellow]DEBUG: Calling Ollama...[/yellow]")
         try:
-            console.print("[yellow]DEBUG: Calling Ollama...[/yellow]")
             response = ollama.chat(
                 model='llama3.1:8b',
                 messages=[{'role': 'user', 'content': prompt}]
             )
-            console.print("[yellow]DEBUG: Ollama response received[/yellow]")
-
             llm_text = response['message']['content'].strip()
             console.print(f"[yellow]DEBUG: Raw LLM text (first 200 chars):[/yellow] {llm_text[:200]}...")
 
-            # Robust JSON extraction
+            # Super aggressive cleanup
+            llm_text = llm_text.strip()
+            # Remove code fences
+            if llm_text.startswith('```json') or llm_text.startswith('```'):
+                llm_text = llm_text.split('```', 2)[1].strip() if '```' in llm_text[3:] else llm_text
+            # Remove trailing garbage
+            llm_text = llm_text.split('\n\n', 1)[0].strip()  # cut after first double newline if present
+            # Fix common trailing commas
+            llm_text = llm_text.replace(',\n}', '\n}')
+
             start = llm_text.find('{')
             end = llm_text.rfind('}') + 1
             if start == -1 or end == 0:
-                raise ValueError("No JSON block found")
+                raise ValueError("No JSON block found in response")
 
             json_str = llm_text[start:end]
+            console.print(f"[yellow]DEBUG: Cleaned JSON string:[/yellow] {json_str[:100]}...")
+
             mutation = json.loads(json_str)
 
-            planned = mutation.get("planned", "No suggestion")
-            acted = mutation.get("acted", "applied")
+            planned = mutation.get("planned", "No suggestion from LLM")
+            acted = mutation.get("acted", "applied LLM suggestion")
             learned = mutation.get("learned", "impact estimated")
 
             console.print("[yellow]DEBUG: Mutation parsed OK[/yellow]")
@@ -126,6 +132,11 @@ Output **JSON only**, no extra text or explanations:
         console.print(f"  Planned mutation: {planned}...")
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
+
+        # Apply the mutation to the running data
+        data = apply_llm_mutation(data, planned, learned)
+        console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
+        console.print(f"[dim]Updated scores: {data.get('scores', {})}[/dim]\n")
 
         current_state_summary += f"\nStep {step_num}: {planned}"
         steps.append({
@@ -146,3 +157,36 @@ Output **JSON only**, no extra text or explanations:
         "evolution_steps": steps,
         "status": "complete"
     }
+ 
+def apply_llm_mutation(data: Dict, planned: str, learned: str) -> Dict:
+    mutated = data.copy()
+    if "components" not in mutated:
+        mutated["components"] = {}
+
+    planned_lower = planned.lower()
+
+    # Keyword-based updates (expand as needed)
+    if "redis" in planned_lower or "rate limit" in planned_lower:
+        mutated["components"]["rate_limiter"] = "Redis"
+    elif "opa" in planned_lower or "policy" in planned_lower:
+        mutated["components"]["policy_engine"] = "OPA"
+    elif "elk" in planned_lower or "logging" in planned_lower or "monitoring" in planned_lower:
+        mutated["components"]["monitoring"] = "ELK Stack"
+    elif "tls" in planned_lower or "encryption" in planned_lower or "hsm" in planned_lower:
+        mutated["components"]["tls_hsm"] = "Hardware Security Module"
+    elif "jwt" in planned_lower or "token" in planned_lower:
+        mutated["components"]["token_auth"] = "JWT"
+
+    # Parse learned for score updates
+    if "scores" not in mutated:
+        mutated["scores"] = {}
+    try:
+        import re
+        for match in re.finditer(r'(\w+):?\s*([+-]?\d+\.?\d*)', learned):
+            key = match.group(1).strip().lower()
+            value = float(match.group(2))
+            mutated["scores"][key] = mutated["scores"].get(key, 0) + value
+    except Exception as e:
+        console.print(f"[yellow]Score parse warning:[/yellow] {str(e)}")
+
+    return mutated
