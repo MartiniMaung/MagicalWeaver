@@ -17,7 +17,7 @@ def evolve_pattern(
 ) -> Dict[str, Any]:
     """
     Core evolution function: loads pattern, runs LLM-powered steps,
-    returns structured result.
+    adds final reflection, returns structured result.
     """
     console.print(f"[bold green]Starting evolution for intent:[/bold green] {intent}")
 
@@ -103,7 +103,6 @@ Use this exact schema (include only fields that apply):
             llm_text = response['message']['content'].strip()
             console.print(f"[yellow]DEBUG: Raw LLM text (first 200 chars):[/yellow] {llm_text[:200]}...")
 
-            # Aggressive cleanup
             llm_text = llm_text.strip()
             if llm_text.startswith('```json') or llm_text.startswith('```'):
                 parts = llm_text.split('```', 2)
@@ -140,8 +139,7 @@ Use this exact schema (include only fields that apply):
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
 
-        # Apply mutation (structured first, fallback second)
-        data = apply_llm_mutation(data, mutation if 'mutation' in locals() else {}, planned, learned)
+        data = apply_llm_mutation(data, planned, learned)
         console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
         console.print(f"[dim]Updated scores: {data.get('scores', {})}[/dim]\n")
 
@@ -154,6 +152,64 @@ Use this exact schema (include only fields that apply):
             "learned": learned
         })
 
+    # Final Reflection Step
+    console.print("[bold magenta]Final Reflection[/bold magenta]")
+    reflection_prompt = f"""
+You are the Archivist of this pattern's evolution.
+Review the full journey from original to final state.
+
+Original pattern:
+{json.dumps(original_data, indent=2)}
+
+Final pattern:
+{json.dumps(data, indent=2)}
+
+All evolution steps:
+{json.dumps(steps, indent=2)}
+
+User intent: {intent}
+
+Summarize:
+- Key emergent properties
+- Tradeoffs and risks
+- Overall improvement score estimate
+- Next big direction or refinement suggestion
+
+Output **JSON only**:
+
+{{
+  "summary": "brief narrative overview",
+  "strengths": ["list of 3-5 strengths"],
+  "risks": ["list of 2-4 risks or tradeoffs"],
+  "next_focus": "recommended next mutation or direction"
+}}
+"""
+
+    try:
+        reflection_response = ollama.chat(
+            model='llama3.1:8b',
+            messages=[{'role': 'user', 'content': reflection_prompt}]
+        )
+        reflection_text = reflection_response['message']['content'].strip()
+        # Simple cleanup
+        start = reflection_text.find('{')
+        end = reflection_text.rfind('}') + 1
+        if start != -1 and end != 0:
+            reflection_json = json.loads(reflection_text[start:end])
+        else:
+            reflection_json = {"summary": "Reflection failed", "strengths": [], "risks": [], "next_focus": "Retry reflection"}
+        console.print("[magenta]Reflection Summary:[/magenta]")
+        console.print(reflection_json.get("summary", "No summary"))
+        console.print("[magenta]Strengths:[/magenta]")
+        for s in reflection_json.get("strengths", []):
+            console.print(f"  • {s}")
+        console.print("[magenta]Risks/Tradeoffs:[/magenta]")
+        for r in reflection_json.get("risks", []):
+            console.print(f"  • {r}")
+        console.print("[magenta]Next Focus:[/magenta] {reflection_json.get('next_focus', 'No suggestion')}")
+    except Exception as e:
+        console.print(f"[red]Reflection error:[/red] {str(e)}")
+
     console.print("[bold green]Evolution complete![/bold green]")
 
     return {
@@ -162,13 +218,14 @@ Use this exact schema (include only fields that apply):
         "intent": intent,
         "iterations": iterations,
         "evolution_steps": steps,
+        "reflection": reflection_json if 'reflection_json' in locals() else None,
         "status": "complete"
     }
 
 
-def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", learned: str = "") -> Dict:
+def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
     """
-    Apply mutation to data dict — prefers structured keys, falls back to text.
+    Apply mutation to data dict (basic keyword parsing for now).
     """
     mutated = data.copy()
     if "components" not in mutated:
@@ -176,32 +233,8 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
     if "scores" not in mutated:
         mutated["scores"] = {}
 
-    # Structured actions (preferred)
-    if mutation:
-        if "add_component" in mutation:
-            add = mutation["add_component"]
-            name = add.get("name")
-            value = add.get("value", "added")
-            if name:
-                mutated["components"][name] = value
-                console.print(f"[dim]Added component: {name} = {value}[/dim]")
-
-        if "remove_component" in mutation:
-            remove = mutation["remove_component"]
-            if remove in mutated["components"]:
-                del mutated["components"][remove]
-                console.print(f"[dim]Removed component: {remove}[/dim]")
-
-        if "update_score" in mutation:
-            for key, delta in mutation["update_score"].items():
-                try:
-                    mutated["scores"][key] = mutated["scores"].get(key, 0) + float(delta)
-                    console.print(f"[dim]Updated score {key}: {mutated['scores'][key]} (delta {delta})[/dim]")
-                except:
-                    pass
-
-    # Fallback: text-based if structured keys missing
     planned_lower = planned.lower()
+
     if "redis" in planned_lower or "rate limit" in planned_lower:
         mutated["components"]["rate_limiter"] = "Redis"
     elif "opa" in planned_lower or "policy" in planned_lower:
@@ -213,7 +246,6 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
     elif "istio" in planned_lower or "service mesh" in planned_lower:
         mutated["components"]["service_mesh"] = "Istio"
 
-    # Simple score update from learned string (fallback)
     try:
         import re
         for match in re.finditer(r'(\w+):?\s*([+-]?\d+\.?\d*)', learned):
