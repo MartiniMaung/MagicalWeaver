@@ -6,6 +6,8 @@ from typing import Dict, Any, List
 
 import ollama
 from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 
 console = Console()
 
@@ -17,7 +19,7 @@ def evolve_pattern(
 ) -> Dict[str, Any]:
     """
     Core evolution function: loads pattern, runs LLM-powered steps,
-    adds final reflection, returns structured result.
+    adds polished final reflection, returns structured result.
     """
     console.print(f"[bold green]Starting evolution for intent:[/bold green] {intent}")
 
@@ -55,7 +57,7 @@ def evolve_pattern(
         f"replace caching with in-memory alternative"
     ]
 
-    steps: List[Dict[str, str]] = []
+    steps: List[Dict[str, Any]] = []
 
     console.print("[yellow]DEBUG: Entering evolution loop...[/yellow]")
 
@@ -153,7 +155,7 @@ Use this exact schema (include only fields that apply):
         })
 
     # Final Reflection Step
-    console.print("[bold magenta]Final Reflection[/bold magenta]")
+    console.print("\n[bold magenta]Final Reflection[/bold magenta]")
     reflection_prompt = f"""
 You are the Archivist of this pattern's evolution.
 Review the full journey from original to final state.
@@ -169,46 +171,59 @@ All evolution steps:
 
 User intent: {intent}
 
-Summarize:
-- Key emergent properties
-- Tradeoffs and risks
-- Overall improvement score estimate
-- Next big direction or refinement suggestion
-
-Output **JSON only**:
-
+Summarize in structured JSON:
 {{
-  "summary": "brief narrative overview",
-  "strengths": ["list of 3-5 strengths"],
-  "risks": ["list of 2-4 risks or tradeoffs"],
+  "summary": "brief narrative overview of the evolution",
+  "strengths": ["3-5 key emergent strengths"],
+  "risks": ["2-4 main risks or tradeoffs"],
+  "overall_score_estimate": 8.5,  // 0-10 scale, holistic quality vs intent
+  "confidence": 85,               // 0-100%, how well the variant meets intent
   "next_focus": "recommended next mutation or direction"
 }}
 """
 
+    reflection = {
+        "summary": "Reflection failed",
+        "strengths": [],
+        "risks": [],
+        "overall_score_estimate": 0.0,
+        "confidence": 0,
+        "next_focus": "No suggestion"
+    }
+
     try:
-        reflection_response = ollama.chat(
+        response = ollama.chat(
             model='llama3.1:8b',
             messages=[{'role': 'user', 'content': reflection_prompt}]
         )
-        reflection_text = reflection_response['message']['content'].strip()
-        # Simple cleanup
-        start = reflection_text.find('{')
-        end = reflection_text.rfind('}') + 1
+        text = response['message']['content'].strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
         if start != -1 and end != 0:
-            reflection_json = json.loads(reflection_text[start:end])
-        else:
-            reflection_json = {"summary": "Reflection failed", "strengths": [], "risks": [], "next_focus": "Retry reflection"}
-        console.print("[magenta]Reflection Summary:[/magenta]")
-        console.print(reflection_json.get("summary", "No summary"))
-        console.print("[magenta]Strengths:[/magenta]")
-        for s in reflection_json.get("strengths", []):
-            console.print(f"  • {s}")
-        console.print("[magenta]Risks/Tradeoffs:[/magenta]")
-        for r in reflection_json.get("risks", []):
-            console.print(f"  • {r}")
-        console.print("[magenta]Next Focus:[/magenta] {reflection_json.get('next_focus', 'No suggestion')}")
+            reflection = json.loads(text[start:end])
     except Exception as e:
         console.print(f"[red]Reflection error:[/red] {str(e)}")
+
+    # Beautiful display
+    console.print(Panel(
+        Text.assemble(
+            ("Summary:\n", "bold magenta"),
+            f"{reflection.get('summary', 'No summary')}\n\n",
+            ("Strengths:\n", "bold green"),
+            "\n".join(f"  • {s}" for s in reflection.get("strengths", [])) + "\n\n",
+            ("Risks/Tradeoffs:\n", "bold red"),
+            "\n".join(f"  • {r}" for r in reflection.get("risks", [])) + "\n\n",
+            ("Overall Score Estimate:", "bold cyan"),
+            f" {reflection.get('overall_score_estimate', 0.0)}/10\n",
+            ("Confidence:", "bold cyan"),
+            f" {reflection.get('confidence', 0)}%\n",
+            ("Next Focus:", "bold yellow"),
+            f" {reflection.get('next_focus', 'No suggestion')}"
+        ),
+        title="Archivist's Reflection",
+        border_style="magenta",
+        expand=False
+    ))
 
     console.print("[bold green]Evolution complete![/bold green]")
 
@@ -218,7 +233,7 @@ Output **JSON only**:
         "intent": intent,
         "iterations": iterations,
         "evolution_steps": steps,
-        "reflection": reflection_json if 'reflection_json' in locals() else None,
+        "reflection": reflection,
         "status": "complete"
     }
 
