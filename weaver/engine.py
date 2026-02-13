@@ -79,7 +79,8 @@ Previous mutations:
 
 Suggest ONE focused, realistic next mutation.
 Improve security, scalability, novelty, cost, etc. based on intent.
-Output **JSON only**, no extra text or explanations.
+
+Output **JSON only** — no explanations, no markdown, no code fences, no extra text.
 Use this exact schema (include only fields that apply):
 
 {{
