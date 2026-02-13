@@ -21,11 +21,9 @@ def evolve_pattern(
     """
     console.print(f"[bold green]Starting evolution for intent:[/bold green] {intent}")
 
-    # Validate file
     if not os.path.exists(pattern_path):
         raise FileNotFoundError(f"Pattern file not found: {pattern_path}")
 
-    # Load JSON
     try:
         with open(pattern_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -35,7 +33,6 @@ def evolve_pattern(
     except Exception as e:
         raise RuntimeError(f"Failed to load pattern: {str(e)}")
 
-    # Display loading info
     console.print(f"[bold green]Pattern loaded successfully[/bold green] ({len(str(data))} chars)")
     if isinstance(data, dict):
         console.print(f"[bold]Top-level keys:[/bold] {list(data.keys())}")
@@ -46,10 +43,8 @@ def evolve_pattern(
     console.print(f"[bold]Intent:[/bold] {intent}")
     console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
 
-    # Prepare summary for LLM
     current_state_summary = json.dumps(data, indent=2)[:1500]
 
-    # Fallback mutation options
     components = data.get("components", {}) if isinstance(data, dict) else {}
     current_auth = components.get("auth", "unknown")
     mutation_options = [
@@ -145,8 +140,8 @@ Use this exact schema (include only fields that apply):
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
 
-        # Apply mutation (safe for both paths)
-        data = apply_llm_mutation(data, planned, learned)
+        # Apply mutation (structured first, fallback second)
+        data = apply_llm_mutation(data, mutation if 'mutation' in locals() else {}, planned, learned)
         console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
         console.print(f"[dim]Updated scores: {data.get('scores', {})}[/dim]\n")
 
@@ -171,9 +166,9 @@ Use this exact schema (include only fields that apply):
     }
 
 
-def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
+def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", learned: str = "") -> Dict:
     """
-    Apply mutation to data dict (basic keyword parsing for now).
+    Apply mutation to data dict — prefers structured keys, falls back to text.
     """
     mutated = data.copy()
     if "components" not in mutated:
@@ -181,8 +176,32 @@ def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
     if "scores" not in mutated:
         mutated["scores"] = {}
 
-    planned_lower = planned.lower()
+    # Structured actions (preferred)
+    if mutation:
+        if "add_component" in mutation:
+            add = mutation["add_component"]
+            name = add.get("name")
+            value = add.get("value", "added")
+            if name:
+                mutated["components"][name] = value
+                console.print(f"[dim]Added component: {name} = {value}[/dim]")
 
+        if "remove_component" in mutation:
+            remove = mutation["remove_component"]
+            if remove in mutated["components"]:
+                del mutated["components"][remove]
+                console.print(f"[dim]Removed component: {remove}[/dim]")
+
+        if "update_score" in mutation:
+            for key, delta in mutation["update_score"].items():
+                try:
+                    mutated["scores"][key] = mutated["scores"].get(key, 0) + float(delta)
+                    console.print(f"[dim]Updated score {key}: {mutated['scores'][key]} (delta {delta})[/dim]")
+                except:
+                    pass
+
+    # Fallback: text-based if structured keys missing
+    planned_lower = planned.lower()
     if "redis" in planned_lower or "rate limit" in planned_lower:
         mutated["components"]["rate_limiter"] = "Redis"
     elif "opa" in planned_lower or "policy" in planned_lower:
@@ -194,7 +213,7 @@ def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
     elif "istio" in planned_lower or "service mesh" in planned_lower:
         mutated["components"]["service_mesh"] = "Istio"
 
-    # Simple score update from learned string
+    # Simple score update from learned string (fallback)
     try:
         import re
         for match in re.finditer(r'(\w+):?\s*([+-]?\d+\.?\d*)', learned):
