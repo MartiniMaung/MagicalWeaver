@@ -79,15 +79,27 @@ Previous mutations:
 
 Suggest ONE focused, realistic next mutation.
 Improve security, scalability, novelty, cost, etc. based on intent.
-Output **JSON only**, no extra text or explanations:
+Output **JSON only**, no extra text or explanations.
+Use this exact schema (include only fields that apply):
+
 {{
   "planned": "short clear description of the change",
   "acted": "how it was applied",
-  "learned": "estimated impact (e.g. security +1.2, complexity +0.4)"
+  "learned": "estimated impact string (e.g. security +1.2, complexity +0.4)",
+  "add_component": {{"name": "component_name", "value": "details or config string"}}   // optional
+  "update_score": {{"key1": +1.2, "key2": -0.5}}   // optional, deltas only
+  "remove_component": "component_name_to_remove"   // optional
 }}
 """
-        console.print("[yellow]DEBUG: Calling Ollama...[/yellow]")
+
+        console.print("[yellow]DEBUG: Prompt built[/yellow]")
+
+        planned = "No suggestion"
+        acted = "applied"
+        learned = "impact estimated"
+
         try:
+            console.print("[yellow]DEBUG: Calling Ollama...[/yellow]")
             response = ollama.chat(
                 model='llama3.1:8b',
                 messages=[{'role': 'user', 'content': prompt}]
@@ -95,28 +107,27 @@ Output **JSON only**, no extra text or explanations:
             llm_text = response['message']['content'].strip()
             console.print(f"[yellow]DEBUG: Raw LLM text (first 200 chars):[/yellow] {llm_text[:200]}...")
 
-            # Super aggressive cleanup
+            # Aggressive cleanup
             llm_text = llm_text.strip()
-            # Remove code fences
             if llm_text.startswith('```json') or llm_text.startswith('```'):
-                llm_text = llm_text.split('```', 2)[1].strip() if '```' in llm_text[3:] else llm_text
-            # Remove trailing garbage
-            llm_text = llm_text.split('\n\n', 1)[0].strip()  # cut after first double newline if present
-            # Fix common trailing commas
+                parts = llm_text.split('```', 2)
+                if len(parts) > 1:
+                    llm_text = parts[1].strip()
+            llm_text = llm_text.split('\n\n', 1)[0].strip()
             llm_text = llm_text.replace(',\n}', '\n}')
 
             start = llm_text.find('{')
             end = llm_text.rfind('}') + 1
             if start == -1 or end == 0:
-                raise ValueError("No JSON block found in response")
+                raise ValueError("No JSON block found")
 
             json_str = llm_text[start:end]
             console.print(f"[yellow]DEBUG: Cleaned JSON string:[/yellow] {json_str[:100]}...")
 
             mutation = json.loads(json_str)
 
-            planned = mutation.get("planned", "No suggestion from LLM")
-            acted = mutation.get("acted", "applied LLM suggestion")
+            planned = mutation.get("planned", "No suggestion")
+            acted = mutation.get("acted", "applied")
             learned = mutation.get("learned", "impact estimated")
 
             console.print("[yellow]DEBUG: Mutation parsed OK[/yellow]")
@@ -133,7 +144,7 @@ Output **JSON only**, no extra text or explanations:
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
 
-        # Apply the mutation to the running data
+        # Apply mutation (safe for both paths)
         data = apply_llm_mutation(data, planned, learned)
         console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
         console.print(f"[dim]Updated scores: {data.get('scores', {})}[/dim]\n")
@@ -157,15 +168,20 @@ Output **JSON only**, no extra text or explanations:
         "evolution_steps": steps,
         "status": "complete"
     }
- 
-def apply_llm_mutation(data: Dict, planned: str, learned: str) -> Dict:
+
+
+def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
+    """
+    Apply mutation to data dict (basic keyword parsing for now).
+    """
     mutated = data.copy()
     if "components" not in mutated:
         mutated["components"] = {}
+    if "scores" not in mutated:
+        mutated["scores"] = {}
 
     planned_lower = planned.lower()
 
-    # Keyword-based updates (expand as needed)
     if "redis" in planned_lower or "rate limit" in planned_lower:
         mutated["components"]["rate_limiter"] = "Redis"
     elif "opa" in planned_lower or "policy" in planned_lower:
@@ -174,19 +190,17 @@ def apply_llm_mutation(data: Dict, planned: str, learned: str) -> Dict:
         mutated["components"]["monitoring"] = "ELK Stack"
     elif "tls" in planned_lower or "encryption" in planned_lower or "hsm" in planned_lower:
         mutated["components"]["tls_hsm"] = "Hardware Security Module"
-    elif "jwt" in planned_lower or "token" in planned_lower:
-        mutated["components"]["token_auth"] = "JWT"
+    elif "istio" in planned_lower or "service mesh" in planned_lower:
+        mutated["components"]["service_mesh"] = "Istio"
 
-    # Parse learned for score updates
-    if "scores" not in mutated:
-        mutated["scores"] = {}
+    # Simple score update from learned string
     try:
         import re
         for match in re.finditer(r'(\w+):?\s*([+-]?\d+\.?\d*)', learned):
             key = match.group(1).strip().lower()
             value = float(match.group(2))
             mutated["scores"][key] = mutated["scores"].get(key, 0) + value
-    except Exception as e:
-        console.print(f"[yellow]Score parse warning:[/yellow] {str(e)}")
+    except:
+        pass
 
     return mutated

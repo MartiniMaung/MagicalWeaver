@@ -48,27 +48,30 @@ def evolve(
 ):
     """Evolve a Loom pattern with emergent consciousness."""
     console.rule("Evolving Pattern", style="bold magenta")
-
     try:
         from weaver.engine import evolve_pattern
         result = evolve_pattern(pattern, intent, iterations)
 
+        if result is None:
+            console.print("[red]Error: No result returned from engine[/red]")
+            raise typer.Exit(code=1)
+
         # Save result
         import json
         import os
-        console.print(f"[yellow]DEBUG: Saving result to {output}[/yellow]")
+        console.print(f"[yellow]DEBUG: Saving result (type: {type(result)})[/yellow]")
         with open(output, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
         console.print(f"[bold green]Evolved pattern saved to:[/bold green] {output}")
         console.print(f"[dim]File size: {os.path.getsize(output)} bytes[/dim]")
-        console.print("[dim]First few chars of file:[/dim]")
-        with open(output, "r") as f:
-            console.print(f.read(200) + "...")    
-   
-        console.print("Emergent variant ready. (Real implementation coming soon...)")
+        with open(output, "r", encoding="utf-8") as f:
+            console.print("[dim]File preview (first 200 chars):[/dim]")
+            console.print(f.read(200) + "...")
+
+        console.print("Emergent variant ready.")
     except Exception as e:
         console.print(f"[red bold]Error:[/red bold] {str(e)}")
         raise typer.Exit(code=1)
-
+           
 if __name__ == "__main__":
     app()
