@@ -2,6 +2,7 @@
 import json
 import os
 import random
+import time
 from typing import Dict, Any, List
 
 import ollama
@@ -15,13 +16,13 @@ console = Console()
 def evolve_pattern(
     pattern_path: str,
     intent: str,
-    iterations: int = 3
+    iterations: int = 3,
+    temperature: float = 0.3  # added for control
 ) -> Dict[str, Any]:
     """
-    Core evolution function: loads pattern, runs LLM-powered steps,
-    adds polished final reflection, returns structured result.
+    Core evolution function — Phase 1 complete.
     """
-    console.print(f"[bold green]Starting evolution for intent:[/bold green] {intent}")
+    console.print(f"[bold green]Starting evolution for intent:[/bold green] {intent} (temp={temperature})")
 
     if not os.path.exists(pattern_path):
         raise FileNotFoundError(f"Pattern file not found: {pattern_path}")
@@ -45,7 +46,17 @@ def evolve_pattern(
     console.print(f"[bold]Intent:[/bold] {intent}")
     console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
 
-    current_state_summary = json.dumps(data, indent=2)[:1500]
+    # Smart summary for large patterns (Phase 1 polish)
+    def summarize_pattern(d: Dict) -> str:
+        summary = []
+        if "components" in d:
+            summary.append(f"Components: {list(d['components'].keys())}")
+        if "scores" in d:
+            summary.append(f"Scores: {d['scores']}")
+        # Add more if you have other important top-level keys
+        return "; ".join(summary) or json.dumps(d, indent=2)[:1500]
+
+    current_state_summary = summarize_pattern(data)
 
     components = data.get("components", {}) if isinstance(data, dict) else {}
     current_auth = components.get("auth", "unknown")
@@ -66,7 +77,7 @@ def evolve_pattern(
 
         prompt = f"""
 You are an expert OSS architecture agent evolving a pattern.
-Current pattern state (JSON):
+Current pattern state summary:
 {current_state_summary}
 
 User intent: {intent}
@@ -96,44 +107,52 @@ Use this exact schema (include only fields that apply):
         acted = "applied"
         learned = "impact estimated"
 
-        try:
-            console.print("[yellow]DEBUG: Calling Ollama...[/yellow]")
-            response = ollama.chat(
-                model='llama3.1:8b',
-                messages=[{'role': 'user', 'content': prompt}]
-            )
-            llm_text = response['message']['content'].strip()
-            console.print(f"[yellow]DEBUG: Raw LLM text (first 200 chars):[/yellow] {llm_text[:200]}...")
+        mutation = None
+        for attempt in range(2):  # retry once on parse failure
+            try:
+                console.print(f"[yellow]DEBUG: Calling Ollama (attempt {attempt+1})...[/yellow]")
+                response = ollama.chat(
+                    model='llama3.1:8b',
+                    messages=[{'role': 'user', 'content': prompt}],
+                    options={'temperature': temperature}
+                )
+                llm_text = response['message']['content'].strip()
+                console.print(f"[yellow]DEBUG: Raw LLM text (first 200 chars):[/yellow] {llm_text[:200]}...")
 
-            llm_text = llm_text.strip()
-            if llm_text.startswith('```json') or llm_text.startswith('```'):
-                parts = llm_text.split('```', 2)
-                if len(parts) > 1:
-                    llm_text = parts[1].strip()
-            llm_text = llm_text.split('\n\n', 1)[0].strip()
-            llm_text = llm_text.replace(',\n}', '\n}')
+                # Aggressive cleanup
+                llm_text = llm_text.strip()
+                if llm_text.startswith('```json') or llm_text.startswith('```'):
+                    parts = llm_text.split('```', 2)
+                    if len(parts) > 1:
+                        llm_text = parts[1].strip()
+                llm_text = llm_text.split('\n\n', 1)[0].strip()
+                llm_text = llm_text.replace(',\n}', '\n}')
 
-            start = llm_text.find('{')
-            end = llm_text.rfind('}') + 1
-            if start == -1 or end == 0:
-                raise ValueError("No JSON block found")
+                start = llm_text.find('{')
+                end = llm_text.rfind('}') + 1
+                if start == -1 or end == 0:
+                    raise ValueError("No JSON block found")
 
-            json_str = llm_text[start:end]
-            console.print(f"[yellow]DEBUG: Cleaned JSON string:[/yellow] {json_str[:100]}...")
+                json_str = llm_text[start:end]
+                console.print(f"[yellow]DEBUG: Cleaned JSON string:[/yellow] {json_str[:100]}...")
 
-            mutation = json.loads(json_str)
+                mutation = json.loads(json_str)
 
-            planned = mutation.get("planned", "No suggestion")
-            acted = mutation.get("acted", "applied")
-            learned = mutation.get("learned", "impact estimated")
+                planned = mutation.get("planned", "No suggestion")
+                acted = mutation.get("acted", "applied")
+                learned = mutation.get("learned", "impact estimated")
 
-            console.print("[yellow]DEBUG: Mutation parsed OK[/yellow]")
+                console.print("[yellow]DEBUG: Mutation parsed OK[/yellow]")
+                break  # success → exit retry loop
 
-        except Exception as e:
-            console.print(f"[red bold]Ollama / parse error:[/red bold] {str(e)} — fallback to mock")
-            planned = random.choice(mutation_options)
-            acted = f"applied fallback: {planned}"
-            learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
+            except Exception as e:
+                console.print(f"[red bold]Ollama / parse error (attempt {attempt+1}):[/red bold] {str(e)}")
+                time.sleep(1)  # brief backoff
+                if attempt == 1:
+                    console.print("[red bold]Giving up — using fallback[/red bold]")
+                    planned = random.choice(mutation_options)
+                    acted = f"applied fallback: {planned}"
+                    learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
 
         console.print(f"[cyan]Step {step_num}/{iterations}[/cyan]")
         console.print(f"  Perceived current state...")
@@ -141,11 +160,11 @@ Use this exact schema (include only fields that apply):
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
 
-        data = apply_llm_mutation(data, planned, learned)
+        data = apply_llm_mutation(data, mutation or {}, planned, learned)
         console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
         console.print(f"[dim]Updated scores: {data.get('scores', {})}[/dim]\n")
 
-        current_state_summary += f"\nStep {step_num}: {planned}"
+        current_state_summary = summarize_pattern(data)
         steps.append({
             "step": step_num,
             "perceived": "current state",
@@ -194,7 +213,8 @@ Summarize in structured JSON:
     try:
         response = ollama.chat(
             model='llama3.1:8b',
-            messages=[{'role': 'user', 'content': reflection_prompt}]
+            messages=[{'role': 'user', 'content': reflection_prompt}],
+            options={'temperature': 0.2}
         )
         text = response['message']['content'].strip()
         start = text.find('{')
@@ -238,18 +258,39 @@ Summarize in structured JSON:
     }
 
 
-def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
-    """
-    Apply mutation to data dict (basic keyword parsing for now).
-    """
+def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", learned: str = "") -> Dict:
     mutated = data.copy()
     if "components" not in mutated:
         mutated["components"] = {}
     if "scores" not in mutated:
         mutated["scores"] = {}
 
-    planned_lower = planned.lower()
+    # Structured actions (preferred)
+    if mutation:
+        if "add_component" in mutation:
+            add = mutation["add_component"]
+            name = add.get("name")
+            value = add.get("value", "added")
+            if name:
+                mutated["components"][name] = value
+                console.print(f"[dim]Added component: {name} = {value}[/dim]")
 
+        if "remove_component" in mutation:
+            remove = mutation["remove_component"]
+            if remove in mutated["components"]:
+                del mutated["components"][remove]
+                console.print(f"[dim]Removed component: {remove}[/dim]")
+
+        if "update_score" in mutation:
+            for key, delta in mutation["update_score"].items():
+                try:
+                    mutated["scores"][key] = mutated["scores"].get(key, 0) + float(delta)
+                    console.print(f"[dim]Updated score {key}: {mutated['scores'][key]} (delta {delta})[/dim]")
+                except:
+                    pass
+
+    # Fallback: text-based
+    planned_lower = planned.lower()
     if "redis" in planned_lower or "rate limit" in planned_lower:
         mutated["components"]["rate_limiter"] = "Redis"
     elif "opa" in planned_lower or "policy" in planned_lower:
@@ -261,6 +302,7 @@ def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
     elif "istio" in planned_lower or "service mesh" in planned_lower:
         mutated["components"]["service_mesh"] = "Istio"
 
+    # Score fallback
     try:
         import re
         for match in re.finditer(r'(\w+):?\s*([+-]?\d+\.?\d*)', learned):
@@ -271,3 +313,13 @@ def apply_llm_mutation(data: Dict, planned: str, learned: str = "") -> Dict:
         pass
 
     return mutated
+
+
+def summarize_pattern(d: Dict) -> str:
+    """Smart summary for large patterns."""
+    summary = []
+    if "components" in d:
+        summary.append(f"Components: {list(d['components'].keys())}")
+    if "scores" in d:
+        summary.append(f"Scores: {d['scores']}")
+    return "; ".join(summary) or json.dumps(d, indent=2)[:1500]
