@@ -1,5 +1,7 @@
 # MagicalWeaver
 
+[Apache 2.0 License](LICENSE)
+
 
 
 \*\*The emergent, agentic counterpart to Loom Pattern Weaver\*\*  
