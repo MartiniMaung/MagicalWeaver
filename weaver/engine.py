@@ -84,7 +84,6 @@ def evolve_single_variant(
     temperature: float = 0.3,
     variant_id: int = 1
 ) -> Dict[str, Any]:
-    """Run one independent evolution variant."""
     data = original_data.copy()
     current_state_summary = summarize_pattern(data)
     steps = []
@@ -179,7 +178,6 @@ Output **JSON only**:
 
 
 def calculate_composite_score(scores: Dict) -> float:
-    """Higher = better. Weights can be tuned later."""
     return (
         scores.get("security", 0) * 1.5 +
         scores.get("scalability", 0) * 1.2 +
@@ -187,6 +185,59 @@ def calculate_composite_score(scores: Dict) -> float:
         scores.get("complexity", 0) * 1.0 -
         scores.get("cost", 0) * 0.8
     )
+
+
+def run_reflection_on_variant(final_data: Dict, original_data: Dict, steps: List, intent: str) -> Dict:
+    reflection_prompt = f"""
+You are the Archivist of this pattern's evolution.
+Review the full journey from original to final state.
+
+Original pattern:
+{json.dumps(original_data, indent=2)}
+
+Final pattern:
+{json.dumps(final_data, indent=2)}
+
+All evolution steps:
+{json.dumps(steps, indent=2)}
+
+User intent: {intent}
+
+Summarize in structured JSON:
+{{
+  "summary": "brief narrative overview",
+  "strengths": ["3-5 key emergent strengths"],
+  "risks": ["2-4 main risks or tradeoffs"],
+  "overall_score_estimate": 8.5,
+  "confidence": 85,
+  "next_focus": "recommended next mutation or direction"
+}}
+"""
+
+    reflection = {
+        "summary": "Reflection failed",
+        "strengths": [],
+        "risks": [],
+        "overall_score_estimate": 0.0,
+        "confidence": 0,
+        "next_focus": "No suggestion"
+    }
+
+    try:
+        response = ollama.chat(
+            model='llama3.1:8b',
+            messages=[{'role': 'user', 'content': reflection_prompt}],
+            options={'temperature': 0.2}
+        )
+        text = response['message']['content'].strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end != 0:
+            reflection = json.loads(text[start:end])
+    except Exception as e:
+        console.print(f"[red]Reflection error:[/red] {str(e)}")
+
+    return reflection
 
 
 def evolve_pattern(
@@ -213,22 +264,68 @@ def evolve_pattern(
         result = evolve_single_variant(original_data, intent, iterations, temperature, v)
         variant_results.append(result)
 
+    
     # Rank and select top
-    variant_results.sort(key=lambda x: x["score"], reverse=True)
-    top_variant = variant_results[0]
+    # First, remember original IDs
+    variants_with_id = [(i + 1, res) for i, res in enumerate(variant_results)]  # list of (original_id, result_dict)
 
+    # Sort by score descending
+    sorted_variants = sorted(variants_with_id, key=lambda x: x[1]["score"], reverse=True)
+
+    # Build table with original IDs
     table = Table(title="Variant Ranking")
-    table.add_column("Variant", style="cyan")
+    table.add_column("Original Variant ID", style="cyan")
     table.add_column("Composite Score", style="green")
-    for i, res in enumerate(variant_results, 1):
-        table.add_row(f"Variant {i}", f"{res['score']:.1f}")
+    table.add_column("Rank", style="yellow")
+
+    for rank, (orig_id, res) in enumerate(sorted_variants, 1):
+        style = "bold green" if rank == 1 else ""
+        table.add_row(
+            f"Variant {orig_id}",
+            f"{res['score']:.1f}",
+            f"#{rank}",
+            style=style
+        )
+
     console.print(table)
 
-    console.print(f"[bold green]Top variant selected (score: {top_variant['score']:.1f})[/bold green]")
+    # Winner announcement (using original ID)
+    winner_id, top_variant = sorted_variants[0]
+    console.print(f"[bold green]Top variant selected: Variant {winner_id} (score: {top_variant['score']:.1f})[/bold green]")   
+    
+    # Run reflection on top variant only
+    console.print("\n[bold magenta]Final Reflection on Top Variant[/bold magenta]")
+    reflection = run_reflection_on_variant(
+        top_variant["final_data"],
+        original_data,
+        top_variant["steps"],
+        intent
+    )
+
+    console.print(Panel(
+        Text.assemble(
+            ("Summary:\n", "bold magenta"),
+            f"{reflection.get('summary', 'No summary')}\n\n",
+            ("Strengths:\n", "bold green"),
+            "\n".join(f"  • {s}" for s in reflection.get("strengths", [])) + "\n\n",
+            ("Risks/Tradeoffs:\n", "bold red"),
+            "\n".join(f"  • {r}" for r in reflection.get("risks", [])) + "\n\n",
+            ("Overall Score Estimate:", "bold cyan"),
+            f" {reflection.get('overall_score_estimate', 0.0)}/10\n",
+            ("Confidence:", "bold cyan"),
+            f" {reflection.get('confidence', 0)}%\n",
+            ("Next Focus:", "bold yellow"),
+            f" {reflection.get('next_focus', 'No suggestion')}"
+        ),
+        title="Archivist's Reflection (Top Variant)",
+        border_style="magenta",
+        expand=False
+    ))
 
     return {
         "original_data": original_data,
         "top_variant": top_variant["final_data"],
         "all_variants_scores": [r["score"] for r in variant_results],
+        "reflection": reflection,
         "status": "complete"
     }
