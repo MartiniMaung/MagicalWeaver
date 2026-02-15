@@ -17,16 +17,19 @@ def evolve_pattern(
     pattern_path: str,
     intent: str,
     iterations: int = 3,
-    temperature: float = 0.3  # added for control
+    temperature: float = 0.3
 ) -> Dict[str, Any]:
     """
-    Core evolution function — Phase 1 complete.
+    Core evolution function: loads pattern, runs LLM-powered steps,
+    adds final reflection, returns structured result.
     """
     console.print(f"[bold green]Starting evolution for intent:[/bold green] {intent} (temp={temperature})")
 
+    # Validate file
     if not os.path.exists(pattern_path):
         raise FileNotFoundError(f"Pattern file not found: {pattern_path}")
 
+    # Load JSON
     try:
         with open(pattern_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -46,18 +49,18 @@ def evolve_pattern(
     console.print(f"[bold]Intent:[/bold] {intent}")
     console.print(f"[dim]Running {iterations} evolution steps...[/dim]\n")
 
-    # Smart summary for large patterns (Phase 1 polish)
+    # Smart summary for large patterns
     def summarize_pattern(d: Dict) -> str:
         summary = []
         if "components" in d:
             summary.append(f"Components: {list(d['components'].keys())}")
         if "scores" in d:
             summary.append(f"Scores: {d['scores']}")
-        # Add more if you have other important top-level keys
         return "; ".join(summary) or json.dumps(d, indent=2)[:1500]
 
     current_state_summary = summarize_pattern(data)
 
+    # Fallback mutation options
     components = data.get("components", {}) if isinstance(data, dict) else {}
     current_auth = components.get("auth", "unknown")
     mutation_options = [
@@ -108,7 +111,7 @@ Use this exact schema (include only fields that apply):
         learned = "impact estimated"
 
         mutation = None
-        for attempt in range(2):  # retry once on parse failure
+        for attempt in range(2):
             try:
                 console.print(f"[yellow]DEBUG: Calling Ollama (attempt {attempt+1})...[/yellow]")
                 response = ollama.chat(
@@ -119,7 +122,6 @@ Use this exact schema (include only fields that apply):
                 llm_text = response['message']['content'].strip()
                 console.print(f"[yellow]DEBUG: Raw LLM text (first 200 chars):[/yellow] {llm_text[:200]}...")
 
-                # Aggressive cleanup
                 llm_text = llm_text.strip()
                 if llm_text.startswith('```json') or llm_text.startswith('```'):
                     parts = llm_text.split('```', 2)
@@ -143,16 +145,17 @@ Use this exact schema (include only fields that apply):
                 learned = mutation.get("learned", "impact estimated")
 
                 console.print("[yellow]DEBUG: Mutation parsed OK[/yellow]")
-                break  # success → exit retry loop
+                break
 
             except Exception as e:
-                console.print(f"[red bold]Ollama / parse error (attempt {attempt+1}):[/red bold] {str(e)}")
-                time.sleep(1)  # brief backoff
+                console.print(f"[red bold]Attempt {attempt+1} failed: {str(e)}[/red bold]")
+                time.sleep(1)
                 if attempt == 1:
                     console.print("[red bold]Giving up — using fallback[/red bold]")
                     planned = random.choice(mutation_options)
                     acted = f"applied fallback: {planned}"
                     learned = f"robustness +{random.uniform(0.3, 0.8):.1f}, novelty +{random.uniform(0.8, 1.5):.1f} (mock)"
+                    mutation = {}
 
         console.print(f"[cyan]Step {step_num}/{iterations}[/cyan]")
         console.print(f"  Perceived current state...")
@@ -160,7 +163,7 @@ Use this exact schema (include only fields that apply):
         console.print(f"  Acted: {acted}")
         console.print(f"  Learned: {learned}\n")
 
-        data = apply_llm_mutation(data, mutation or {}, planned, learned)
+        data = apply_llm_mutation(data, mutation, planned, learned)
         console.print(f"[dim]Updated components after step {step_num}: {data.get('components', {})}[/dim]")
         console.print(f"[dim]Updated scores: {data.get('scores', {})}[/dim]\n")
 
@@ -173,7 +176,7 @@ Use this exact schema (include only fields that apply):
             "learned": learned
         })
 
-    # Final Reflection Step
+    # Final Reflection
     console.print("\n[bold magenta]Final Reflection[/bold magenta]")
     reflection_prompt = f"""
 You are the Archivist of this pattern's evolution.
@@ -195,8 +198,8 @@ Summarize in structured JSON:
   "summary": "brief narrative overview of the evolution",
   "strengths": ["3-5 key emergent strengths"],
   "risks": ["2-4 main risks or tradeoffs"],
-  "overall_score_estimate": 8.5,  // 0-10 scale, holistic quality vs intent
-  "confidence": 85,               // 0-100%, how well the variant meets intent
+  "overall_score_estimate": 8.5,
+  "confidence": 85,
   "next_focus": "recommended next mutation or direction"
 }}
 """
@@ -224,7 +227,6 @@ Summarize in structured JSON:
     except Exception as e:
         console.print(f"[red]Reflection error:[/red] {str(e)}")
 
-    # Beautiful display
     console.print(Panel(
         Text.assemble(
             ("Summary:\n", "bold magenta"),
@@ -265,7 +267,6 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
     if "scores" not in mutated:
         mutated["scores"] = {}
 
-    # Structured actions (preferred)
     if mutation:
         if "add_component" in mutation:
             add = mutation["add_component"]
@@ -289,7 +290,6 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
                 except:
                     pass
 
-    # Fallback: text-based
     planned_lower = planned.lower()
     if "redis" in planned_lower or "rate limit" in planned_lower:
         mutated["components"]["rate_limiter"] = "Redis"
@@ -302,7 +302,6 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
     elif "istio" in planned_lower or "service mesh" in planned_lower:
         mutated["components"]["service_mesh"] = "Istio"
 
-    # Score fallback
     try:
         import re
         for match in re.finditer(r'(\w+):?\s*([+-]?\d+\.?\d*)', learned):
@@ -316,7 +315,6 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
 
 
 def summarize_pattern(d: Dict) -> str:
-    """Smart summary for large patterns."""
     summary = []
     if "components" in d:
         summary.append(f"Components: {list(d['components'].keys())}")
