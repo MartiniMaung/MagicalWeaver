@@ -87,6 +87,62 @@ def is_novel_mutation(planned: str, learned: str) -> bool:
     ]
     return any(kw in text for kw in novelty_keywords)
 
+def fetch_real_novelty_ideas(intent: str, num_ideas: int = 4) -> List[str]:
+    """
+    Real novelty foraging using web_search and x_keyword_search tools.
+    Fetches current trends and buzz related to the intent.
+    """
+    ideas = []
+
+    try:
+        # 1. Web search for recent trends / articles / repos
+        web_query = f"{intent} trends 2026 OR secure ecommerce backend OR backend security OR eBPF OR confidential computing OR OAuth 2.1 OR zero-trust OR service mesh OR SPIFFE OR Cilium OR TDX OR SEV"
+        web_results = web_search(query=web_query, num_results=10)
+
+        for r in web_results[:6]:  # top 6
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
+            if title and len(title) > 20:
+                ideas.append(f"{title[:70]}... {snippet[:80]}...")
+
+        # 2. X keyword search for real-time discussion / buzz
+        x_query = f"(\"secure backend\" OR \"ecommerce security\" OR eBPF OR TDX OR SEV OR OAuth2.1 OR zero-trust OR Cilium OR SPIFFE OR Linkerd) since:2026-01-01"
+        x_results = x_keyword_search(query=x_query, limit=8, mode="Latest")
+
+        for post in x_results:
+            text = post.get("text", "")
+            user = post.get("user", {}).get("screen_name", "")
+            if text and len(text) > 30:
+                ideas.append(f"@{user}: {text[:100]}...")
+
+        # 3. Deduplicate & clean up
+        seen = set()
+        unique_ideas = []
+        for idea in ideas:
+            cleaned = idea.strip().replace("\n", " ").replace("  ", " ")
+            if cleaned and cleaned not in seen:
+                unique_ideas.append(cleaned)
+                seen.add(cleaned)
+            if len(unique_ideas) >= num_ideas:
+                break
+
+        if unique_ideas:
+            console.print("[bold green]Live novelty inspiration fetched from web & X[/bold green]")
+            return unique_ideas[:num_ideas]
+
+        raise ValueError("No useful results from tools")
+
+    except Exception as e:
+        console.print(f"[yellow]Live foraging failed: {str(e)} — fallback to mock[/yellow]")
+        fallback = [
+            "eBPF with Cilium 1.16 for L7 security in ecommerce APIs",
+            "AMD SEV-SNP & Intel TDX in Azure/AWS for confidential payment processing",
+            "OAuth 2.1 PAR/RAR/DPoP mandatory for high-security APIs",
+            "Rust Linkerd2-proxy in CNCF production service meshes",
+            "Zero-trust SPIFFE/SPIRE adoption in cloud-native backends"
+        ]
+        random.shuffle(fallback)
+        return fallback[:num_ideas]
 
 def evolve_single_variant(
     original_data: Dict,
