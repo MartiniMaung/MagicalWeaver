@@ -77,6 +77,17 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
     return mutated
 
 
+def is_novel_mutation(planned: str, learned: str) -> bool:
+    """Check if this step was novel/creative."""
+    text = (planned + " " + learned).lower()
+    novelty_keywords = [
+        "novel", "cutting-edge", "experimental", "emergent", "innovative",
+        "eBPF", "cilium", "falco", "tdx", "sev", "spiffe", "spire",
+        "linkerd", "rust", "confidential", "oauth 2.1", "par", "rar", "dpop"
+    ]
+    return any(kw in text for kw in novelty_keywords)
+
+
 def evolve_single_variant(
     original_data: Dict,
     intent: str,
@@ -99,15 +110,17 @@ def evolve_single_variant(
     flavor = ""
     if variant_id == 1:
         flavor = "Focus on reliable, proven solutions with low risk."
-        temp = 0.1  # safe / conservative
+        temp = 0.1
     elif variant_id == 2:
         flavor = "Balance security, performance, and maintainability."
-        temp = 0.4  # balanced
+        temp = 0.4
     else:
         flavor = "Push for novelty, cutting-edge ideas, and maximum emergence."
-        temp = 0.7  # creative / exploratory
+        temp = 0.7
 
     console.print(f"[bold cyan]Variant {variant_id} starting...[/bold cyan] (flavor: {flavor}, temp={temp})")
+
+    novelty_count = 0  # Track how many steps were novel
 
     for step_num in range(1, iterations + 1):
         prompt = f"""
@@ -176,18 +189,28 @@ Output **JSON only**:
                     mutation = {}
 
         data = apply_llm_mutation(data, mutation, planned, learned)
+
+        # Check for novelty
+        if is_novel_mutation(planned, learned):
+            novelty_count += 1
+            console.print(f"[yellow dim]Novel step detected (bonus potential)[/yellow dim]")
+
         current_state_summary = summarize_pattern(data)
         steps.append({"step": step_num, "planned": planned, "acted": acted, "learned": learned})
 
         console.print(f"[dim]Variant {variant_id} step {step_num}: {planned[:60]}...[/dim]")
 
-    final_score = calculate_composite_score(data.get("scores", {}))
-    console.print(f"[bold cyan]Variant {variant_id} finished. Composite score: {final_score:.1f}[/bold cyan]")
+    # Final score with novelty bonus
+    base_score = calculate_composite_score(data.get("scores", {}))
+    novelty_bonus = novelty_count * 1.0  # +1 per novel step
+    final_score = base_score + novelty_bonus
+    console.print(f"[bold cyan]Variant {variant_id} finished. Base score: {base_score:.1f} + novelty bonus: {novelty_bonus:.1f} = {final_score:.1f}[/bold cyan]")
 
     return {
         "final_data": data,
         "steps": steps,
-        "score": final_score
+        "score": final_score,
+        "novelty_count": novelty_count
     }
 
 
@@ -284,6 +307,7 @@ def evolve_pattern(
     table = Table(title="Variant Ranking")
     table.add_column("Original Variant ID", style="cyan")
     table.add_column("Composite Score", style="green")
+    table.add_column("Novelty Bonus", style="magenta")
     table.add_column("Rank", style="yellow")
 
     for rank, (orig_id, res) in enumerate(sorted_results, 1):
@@ -291,6 +315,7 @@ def evolve_pattern(
         table.add_row(
             f"Variant {orig_id}",
             f"{res['score']:.1f}",
+            f"+{res.get('novelty_count', 0) * 1.0:.1f}",
             f"#{rank}",
             style=style
         )
