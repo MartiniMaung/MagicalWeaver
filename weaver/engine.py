@@ -15,51 +15,57 @@ console = Console()
 
 def fetch_real_novelty_ideas(intent: str, num_ideas: int = 4) -> List[str]:
     """
-    Real novelty foraging: use web_search and x_keyword_search to fetch current trends.
-    Returns 3-5 short inspiration ideas or fallback mock list.
+    Real novelty foraging using web_search and x_keyword_search tools.
     """
     ideas = []
     try:
-        # Step 1: Web search for recent trends
-        web_query = f"{intent} trends 2026 OR secure backend architecture OR eBPF OR confidential computing OR OAuth 2.1 OR zero-trust site:github.com OR site:news.ycombinator.com OR site:reddit.com/r/programming"
-        web_results = web_search(query=web_query, num_results=10)
+        # 1. Web search for recent trends
+        web_query = f"{intent} trends 2026 OR secure ecommerce backend OR eBPF OR confidential computing OR OAuth 2.1 OR zero-trust OR service mesh"
+        web_results = web_search(query=web_query, num_results=8)
 
-        for result in web_results[:5]:  # take top 5
-            title = result.get("title", "")
-            snippet = result.get("snippet", "")
+        for r in web_results[:5]:
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
             if title or snippet:
-                ideas.append(f"{title[:80]}... {snippet[:100]}...")
+                idea = f"{title[:60]}... {snippet[:80]}..."
+                ideas.append(idea.strip("... "))
 
-        # Step 2: X keyword search for real-time buzz
-        x_query = f"{intent} OR \"secure backend\" OR eBPF OR TDX OR SEV OR OAuth2.1 since:2026-01-01"
+        # 2. X keyword search for real-time buzz
+        x_query = f"\"secure backend\" OR \"ecommerce security\" OR eBPF OR TDX OR SEV OR OAuth2.1 OR zero-trust since:2026-01-01"
         x_results = x_keyword_search(query=x_query, limit=5, mode="Latest")
 
         for post in x_results:
             text = post.get("text", "")
             if text:
-                ideas.append(text[:150] + "...")
+                ideas.append(text[:120] + "...")
 
         # Deduplicate and limit
-        ideas = list(dict.fromkeys(ideas))[:num_ideas]
+        seen = set()
+        unique_ideas = []
+        for idea in ideas:
+            if idea not in seen:
+                unique_ideas.append(idea)
+                seen.add(idea)
+            if len(unique_ideas) >= num_ideas:
+                break
 
-        if ideas:
-            console.print("[bold green]Fetched real novelty inspiration from the wild[/bold green]")
-            return ideas
+        if unique_ideas:
+            console.print("[bold green]Fetched live novelty inspiration from web & X[/bold green]")
+            return unique_ideas
         else:
-            raise ValueError("No useful results")
+            raise ValueError("No useful ideas found")
 
     except Exception as e:
-        console.print(f"[yellow]Novelty foraging failed: {str(e)} — using fallback[/yellow]")
+        console.print(f"[yellow]Live foraging failed: {str(e)} — fallback to mock[/yellow]")
         fallback = [
-            "Zero-trust with SPIFFE/SPIRE gaining traction",
-            "eBPF-based observability (Cilium/Falco)",
-            "Confidential computing (AMD SEV/Intel TDX)",
-            "OAuth 2.1 with PAR/RAR for auth",
+            "Zero-trust with SPIFFE/SPIRE trending in backend stacks",
+            "eBPF observability with Cilium/Falco for runtime security",
+            "Confidential computing (AMD SEV/Intel TDX) for sensitive workloads",
+            "OAuth 2.1 PAR/RAR adoption in APIs",
             "Rust-based proxies (Linkerd2) in service meshes"
         ]
         random.shuffle(fallback)
-        return fallback[:num_ideas]   
-
+        return fallback[:num_ideas]  
 def summarize_pattern(d: Dict) -> str:
     summary = []
     if "components" in d:
