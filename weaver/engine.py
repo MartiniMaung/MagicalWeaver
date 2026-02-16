@@ -13,59 +13,7 @@ from rich.text import Text
 
 console = Console()
 
-def fetch_real_novelty_ideas(intent: str, num_ideas: int = 4) -> List[str]:
-    """
-    Real novelty foraging using web_search and x_keyword_search tools.
-    """
-    ideas = []
-    try:
-        # 1. Web search for recent trends
-        web_query = f"{intent} trends 2026 OR secure ecommerce backend OR eBPF OR confidential computing OR OAuth 2.1 OR zero-trust OR service mesh"
-        web_results = web_search(query=web_query, num_results=8)
 
-        for r in web_results[:5]:
-            title = r.get("title", "")
-            snippet = r.get("snippet", "")
-            if title or snippet:
-                idea = f"{title[:60]}... {snippet[:80]}..."
-                ideas.append(idea.strip("... "))
-
-        # 2. X keyword search for real-time buzz
-        x_query = f"\"secure backend\" OR \"ecommerce security\" OR eBPF OR TDX OR SEV OR OAuth2.1 OR zero-trust since:2026-01-01"
-        x_results = x_keyword_search(query=x_query, limit=5, mode="Latest")
-
-        for post in x_results:
-            text = post.get("text", "")
-            if text:
-                ideas.append(text[:120] + "...")
-
-        # Deduplicate and limit
-        seen = set()
-        unique_ideas = []
-        for idea in ideas:
-            if idea not in seen:
-                unique_ideas.append(idea)
-                seen.add(idea)
-            if len(unique_ideas) >= num_ideas:
-                break
-
-        if unique_ideas:
-            console.print("[bold green]Fetched live novelty inspiration from web & X[/bold green]")
-            return unique_ideas
-        else:
-            raise ValueError("No useful ideas found")
-
-    except Exception as e:
-        console.print(f"[yellow]Live foraging failed: {str(e)} — fallback to mock[/yellow]")
-        fallback = [
-            "eBPF with Cilium for L7 security in ecommerce APIs",
-            "AMD SEV-SNP & Intel TDX for confidential payment processing",
-            "OAuth 2.1 PAR/RAR/DPoP mandatory for high-security APIs",
-            "Rust Linkerd2-proxy in production service meshes",
-            "Zero-trust with SPIFFE/SPIRE for backend identity"
-        ]
-        random.shuffle(fallback)
-        return fallback[:num_ideas]  
 def summarize_pattern(d: Dict) -> str:
     summary = []
     if "components" in d:
@@ -147,11 +95,7 @@ def evolve_single_variant(
         "add Istio service mesh"
     ]
 
-    # Real novelty foraging
-    novelty_ideas = fetch_real_novelty_ideas(intent)
-    novelty_text = "\n".join(f"- {idea}" for idea in novelty_ideas)
     console.print(f"[bold cyan]Variant {variant_id} starting...[/bold cyan]")
-    console.print(f"[dim]Novelty inspiration from real trends:[/dim]\n{novelty_text}")
 
     for step_num in range(1, iterations + 1):
         prompt = f"""
@@ -163,9 +107,6 @@ User intent: {intent}
 
 Previous mutations:
 {json.dumps(steps, indent=2) if steps else "None yet"}
-
-Recent real-world trends & inspiration (draw from these to make your mutation more novel and grounded):
-{novelty_text}
 
 Suggest ONE focused, realistic next mutation.
 
@@ -246,57 +187,131 @@ def calculate_composite_score(scores: Dict) -> float:
     )
 
 
-def run_reflection_on_variant(final_data: Dict, original_data: Dict, steps: List, intent: str) -> Dict:
-    reflection_prompt = f"""
-You are the Archivist of this pattern's evolution.
-Review the full journey from original to final state.
+def generate_visual_diff(original: Dict, top: Dict) -> Table:
+    table = Table(title="Original vs Top Variant Diff")
+    table.add_column("Item", style="cyan")
+    table.add_column("Original", style="white")
+    table.add_column("Top Variant", style="green")
+    table.add_column("Change", style="yellow")
 
-Original pattern:
-{json.dumps(original_data, indent=2)}
+    # Components
+    all_components = set(original.get("components", {}).keys()) | set(top.get("components", {}).keys())
+    for comp in sorted(all_components):
+        orig_val = original.get("components", {}).get(comp, "-")
+        top_val = top.get("components", {}).get(comp, "-")
+        if orig_val == "-":
+            change = "[green]+ Added[/green]"
+        elif top_val == "-":
+            change = "[red]- Removed[/red]"
+        elif orig_val != top_val:
+            change = f"[yellow]→ {top_val}[/yellow]"
+        else:
+            change = "-"
+        table.add_row(f"Component: {comp}", str(orig_val), str(top_val), change)
 
-Final pattern:
-{json.dumps(final_data, indent=2)}
+    # Scores
+    all_scores = set(original.get("scores", {}).keys()) | set(top.get("scores", {}).keys())
+    for score in sorted(all_scores):
+        orig_val = original.get("scores", {}).get(score, 0.0)
+        top_val = top.get("scores", {}).get(score, 0.0)
+        delta = top_val - orig_val
+        if delta > 0:
+            change = f"[green]+{delta:.1f}[/green]"
+        elif delta < 0:
+            change = f"[red]{delta:.1f}[/red]"
+        else:
+            change = "-"
+        table.add_row(f"Score: {score}", f"{orig_val:.1f}", f"{top_val:.1f}", change)
 
-All evolution steps:
-{json.dumps(steps, indent=2)}
+    return table
 
-User intent: {intent}
 
-Summarize in structured JSON:
-{{
-  "summary": "brief narrative overview",
-  "strengths": ["3-5 key emergent strengths"],
-  "risks": ["2-4 main risks or tradeoffs"],
-  "overall_score_estimate": 8.5,
-  "confidence": 85,
-  "next_focus": "recommended next mutation or direction"
-}}
+def save_markdown_report(
+    original_data: Dict,
+    top_variant: Dict,
+    all_variants_scores: List[float],
+    reflection: Dict,
+    intent: str,
+    iterations: int,
+    variants: int
+):
+    report = f"""# MagicalWeaver Evolution Report
+
+**Intent**: {intent}
+**Iterations per variant**: {iterations}
+**Variants generated**: {variants}
+**Generated**: {time.strftime("%Y-%m-%d %H:%M:%S")}
+
+## Variant Ranking
+| Original Variant ID | Composite Score | Rank |
+|---------------------|-----------------|------|
 """
 
-    reflection = {
-        "summary": "Reflection failed",
-        "strengths": [],
-        "risks": [],
-        "overall_score_estimate": 0.0,
-        "confidence": 0,
-        "next_focus": "No suggestion"
-    }
+    sorted_variants = sorted(enumerate(all_variants_scores, 1), key=lambda x: x[1], reverse=True)
+    for rank, (vid, score) in enumerate(sorted_variants, 1):
+        report += f"| Variant {vid} | {score:.1f} | #{rank} |\n"
 
-    try:
-        response = ollama.chat(
-            model='llama3.1:8b',
-            messages=[{'role': 'user', 'content': reflection_prompt}],
-            options={'temperature': 0.2}
-        )
-        text = response['message']['content'].strip()
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start != -1 and end != 0:
-            reflection = json.loads(text[start:end])
-    except Exception as e:
-        console.print(f"[red]Reflection error:[/red] {str(e)}")
+    report += f"""
 
-    return reflection
+## Top Variant Selected
+**Score**: {max(all_variants_scores):.1f}
+
+## Visual Diff: Original vs Top Variant
+
+| Item | Original | Top Variant | Change |
+|------|----------|-------------|--------|
+"""
+
+    all_components = set(original_data.get("components", {}).keys()) | set(top_variant.get("components", {}).keys())
+    for comp in sorted(all_components):
+        orig_val = original_data.get("components", {}).get(comp, "-")
+        top_val = top_variant.get("components", {}).get(comp, "-")
+        if orig_val == "-":
+            change = "+ Added"
+        elif top_val == "-":
+            change = "- Removed"
+        elif orig_val != top_val:
+            change = f"→ {top_val}"
+        else:
+            change = "-"
+        report += f"| Component: {comp} | {orig_val} | {top_val} | {change} |\n"
+
+    all_scores = set(original_data.get("scores", {}).keys()) | set(top_variant.get("scores", {}).keys())
+    for score in sorted(all_scores):
+        orig_val = original_data.get("scores", {}).get(score, 0.0)
+        top_val = top_variant.get("scores", {}).get(score, 0.0)
+        delta = top_val - orig_val
+        change = f"{delta:+.1f}" if delta != 0 else "-"
+        report += f"| Score: {score} | {orig_val:.1f} | {top_val:.1f} | {change} |\n"
+
+    report += f"""
+
+## Archivist's Reflection on Top Variant
+
+**Summary**  
+{reflection.get('summary', 'No summary')}
+
+**Strengths**  
+{chr(10).join(f"- {s}" for s in reflection.get('strengths', [])) or '- None'}
+
+**Risks/Tradeoffs**  
+{chr(10).join(f"- {r}" for r in reflection.get('risks', [])) or '- None'}
+
+**Overall Score Estimate**  
+{reflection.get('overall_score_estimate', 0.0)}/10
+
+**Confidence**  
+{reflection.get('confidence', 0)}%
+
+**Next Focus**  
+{reflection.get('next_focus', 'No suggestion')}
+
+"""
+
+    with open("evolution_report.md", "w", encoding="utf-8") as f:
+        f.write(report)
+
+    console.print("[bold green]Markdown report saved: evolution_report.md[/bold green]")
 
 
 def evolve_pattern(
@@ -346,6 +361,10 @@ def evolve_pattern(
     top_variant = sorted_results[0][1]
     console.print(f"[bold green]Top variant selected: Variant {winner_id} (score: {top_variant['score']:.1f})[/bold green]")
 
+    # Visual diff
+    diff_table = generate_visual_diff(original_data, top_variant["final_data"])
+    console.print(diff_table)
+
     # Reflection on top variant
     console.print("\n[bold magenta]Final Reflection on Top Variant[/bold magenta]")
     reflection = run_reflection_on_variant(
@@ -375,6 +394,17 @@ def evolve_pattern(
         expand=False
     ))
 
+    # Save Markdown report
+    save_markdown_report(
+        original_data,
+        top_variant["final_data"],
+        [r["score"] for r in variant_results],
+        reflection,
+        intent,
+        iterations,
+        variants
+    )
+
     return {
         "original_data": original_data,
         "top_variant": top_variant["final_data"],
@@ -382,3 +412,128 @@ def evolve_pattern(
         "reflection": reflection,
         "status": "complete"
     }
+
+
+def generate_visual_diff(original: Dict, top: Dict) -> Table:
+    table = Table(title="Original vs Top Variant Diff")
+    table.add_column("Item", style="cyan")
+    table.add_column("Original", style="white")
+    table.add_column("Top Variant", style="green")
+    table.add_column("Change", style="yellow")
+
+    all_components = set(original.get("components", {}).keys()) | set(top.get("components", {}).keys())
+    for comp in sorted(all_components):
+        orig_val = original.get("components", {}).get(comp, "-")
+        top_val = top.get("components", {}).get(comp, "-")
+        if orig_val == "-":
+            change = "[green]+ Added[/green]"
+        elif top_val == "-":
+            change = "[red]- Removed[/red]"
+        elif orig_val != top_val:
+            change = f"[yellow]→ {top_val}[/yellow]"
+        else:
+            change = "-"
+        table.add_row(f"Component: {comp}", str(orig_val), str(top_val), change)
+
+    all_scores = set(original.get("scores", {}).keys()) | set(top.get("scores", {}).keys())
+    for score in sorted(all_scores):
+        orig_val = original.get("scores", {}).get(score, 0.0)
+        top_val = top.get("scores", {}).get(score, 0.0)
+        delta = top_val - orig_val
+        if delta > 0:
+            change = f"[green]+{delta:.1f}[/green]"
+        elif delta < 0:
+            change = f"[red]{delta:.1f}[/red]"
+        else:
+            change = "-"
+        table.add_row(f"Score: {score}", f"{orig_val:.1f}", f"{top_val:.1f}", change)
+
+    return table
+
+
+def save_markdown_report(
+    original_data: Dict,
+    top_variant: Dict,
+    all_variants_scores: List[float],
+    reflection: Dict,
+    intent: str,
+    iterations: int,
+    variants: int
+):
+    report = f"""# MagicalWeaver Evolution Report
+
+**Intent**: {intent}
+**Iterations per variant**: {iterations}
+**Variants generated**: {variants}
+**Generated**: {time.strftime("%Y-%m-%d %H:%M:%S")}
+
+## Variant Ranking
+| Original Variant ID | Composite Score | Rank |
+|---------------------|-----------------|------|
+"""
+
+    sorted_variants = sorted(enumerate(all_variants_scores, 1), key=lambda x: x[1], reverse=True)
+    for rank, (vid, score) in enumerate(sorted_variants, 1):
+        report += f"| Variant {vid} | {score:.1f} | #{rank} |\n"
+
+    report += f"""
+
+## Top Variant Selected
+**Score**: {max(all_variants_scores):.1f}
+
+## Visual Diff: Original vs Top Variant
+
+| Item | Original | Top Variant | Change |
+|------|----------|-------------|--------|
+"""
+
+    all_components = set(original_data.get("components", {}).keys()) | set(top_variant.get("components", {}).keys())
+    for comp in sorted(all_components):
+        orig_val = original_data.get("components", {}).get(comp, "-")
+        top_val = top_variant.get("components", {}).get(comp, "-")
+        if orig_val == "-":
+            change = "+ Added"
+        elif top_val == "-":
+            change = "- Removed"
+        elif orig_val != top_val:
+            change = f"→ {top_val}"
+        else:
+            change = "-"
+        report += f"| Component: {comp} | {orig_val} | {top_val} | {change} |\n"
+
+    all_scores = set(original_data.get("scores", {}).keys()) | set(top_variant.get("scores", {}).keys())
+    for score in sorted(all_scores):
+        orig_val = original_data.get("scores", {}).get(score, 0.0)
+        top_val = top_variant.get("scores", {}).get(score, 0.0)
+        delta = top_val - orig_val
+        change = f"{delta:+.1f}" if delta != 0 else "-"
+        report += f"| Score: {score} | {orig_val:.1f} | {top_val:.1f} | {change} |\n"
+
+    report += f"""
+
+## Archivist's Reflection on Top Variant
+
+**Summary**  
+{reflection.get('summary', 'No summary')}
+
+**Strengths**  
+{chr(10).join(f"- {s}" for s in reflection.get('strengths', [])) or '- None'}
+
+**Risks/Tradeoffs**  
+{chr(10).join(f"- {r}" for r in reflection.get('risks', [])) or '- None'}
+
+**Overall Score Estimate**  
+{reflection.get('overall_score_estimate', 0.0)}/10
+
+**Confidence**  
+{reflection.get('confidence', 0)}%
+
+**Next Focus**  
+{reflection.get('next_focus', 'No suggestion')}
+
+"""
+
+    with open("evolution_report.md", "w", encoding="utf-8") as f:
+        f.write(report)
+
+    console.print("[bold green]Markdown report saved: evolution_report.md[/bold green]")
