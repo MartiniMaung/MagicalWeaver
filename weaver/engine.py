@@ -78,7 +78,6 @@ def apply_llm_mutation(data: Dict, mutation: Dict = None, planned: str = "", lea
 
 
 def is_novel_mutation(planned: str, learned: str) -> bool:
-    """Check if this step was novel/creative."""
     text = (planned + " " + learned).lower()
     novelty_keywords = [
         "novel", "cutting-edge", "experimental", "emergent", "innovative",
@@ -87,62 +86,6 @@ def is_novel_mutation(planned: str, learned: str) -> bool:
     ]
     return any(kw in text for kw in novelty_keywords)
 
-def fetch_real_novelty_ideas(intent: str, num_ideas: int = 4) -> List[str]:
-    """
-    Real novelty foraging using web_search and x_keyword_search tools.
-    Fetches current trends and buzz related to the intent.
-    """
-    ideas = []
-
-    try:
-        # 1. Web search for recent trends / articles / repos
-        web_query = f"{intent} trends 2026 OR secure ecommerce backend OR backend security OR eBPF OR confidential computing OR OAuth 2.1 OR zero-trust OR service mesh OR SPIFFE OR Cilium OR TDX OR SEV"
-        web_results = web_search(query=web_query, num_results=10)
-
-        for r in web_results[:6]:  # top 6
-            title = r.get("title", "")
-            snippet = r.get("snippet", "")
-            if title and len(title) > 20:
-                ideas.append(f"{title[:70]}... {snippet[:80]}...")
-
-        # 2. X keyword search for real-time discussion / buzz
-        x_query = f"(\"secure backend\" OR \"ecommerce security\" OR eBPF OR TDX OR SEV OR OAuth2.1 OR zero-trust OR Cilium OR SPIFFE OR Linkerd) since:2026-01-01"
-        x_results = x_keyword_search(query=x_query, limit=8, mode="Latest")
-
-        for post in x_results:
-            text = post.get("text", "")
-            user = post.get("user", {}).get("screen_name", "")
-            if text and len(text) > 30:
-                ideas.append(f"@{user}: {text[:100]}...")
-
-        # 3. Deduplicate & clean up
-        seen = set()
-        unique_ideas = []
-        for idea in ideas:
-            cleaned = idea.strip().replace("\n", " ").replace("  ", " ")
-            if cleaned and cleaned not in seen:
-                unique_ideas.append(cleaned)
-                seen.add(cleaned)
-            if len(unique_ideas) >= num_ideas:
-                break
-
-        if unique_ideas:
-            console.print("[bold green]Live novelty inspiration fetched from web & X[/bold green]")
-            return unique_ideas[:num_ideas]
-
-        raise ValueError("No useful results from tools")
-
-    except Exception as e:
-        console.print(f"[yellow]Live foraging failed: {str(e)} — fallback to mock[/yellow]")
-        fallback = [
-            "eBPF with Cilium 1.16 for L7 security in ecommerce APIs",
-            "AMD SEV-SNP & Intel TDX in Azure/AWS for confidential payment processing",
-            "OAuth 2.1 PAR/RAR/DPoP mandatory for high-security APIs",
-            "Rust Linkerd2-proxy in CNCF production service meshes",
-            "Zero-trust SPIFFE/SPIRE adoption in cloud-native backends"
-        ]
-        random.shuffle(fallback)
-        return fallback[:num_ideas]
 
 def evolve_single_variant(
     original_data: Dict,
@@ -176,7 +119,7 @@ def evolve_single_variant(
 
     console.print(f"[bold cyan]Variant {variant_id} starting...[/bold cyan] (flavor: {flavor}, temp={temp})")
 
-    novelty_count = 0  # Track how many steps were novel
+    novelty_count = 0
 
     for step_num in range(1, iterations + 1):
         prompt = f"""
@@ -246,7 +189,6 @@ Output **JSON only**:
 
         data = apply_llm_mutation(data, mutation, planned, learned)
 
-        # Check for novelty
         if is_novel_mutation(planned, learned):
             novelty_count += 1
             console.print(f"[yellow dim]Novel step detected (bonus potential)[/yellow dim]")
@@ -256,11 +198,10 @@ Output **JSON only**:
 
         console.print(f"[dim]Variant {variant_id} step {step_num}: {planned[:60]}...[/dim]")
 
-    # Final score with novelty bonus
     base_score = calculate_composite_score(data.get("scores", {}))
-    novelty_bonus = novelty_count * 1.0  # +1 per novel step
+    novelty_bonus = novelty_count * 1.0
     final_score = base_score + novelty_bonus
-    console.print(f"[bold cyan]Variant {variant_id} finished. Base score: {base_score:.1f} + novelty bonus: {novelty_bonus:.1f} = {final_score:.1f}[/bold cyan]")
+    console.print(f"[bold cyan]Variant {variant_id} finished. Base: {base_score:.1f} + novelty bonus: {novelty_bonus:.1f} = {final_score:.1f}[/bold cyan]")
 
     return {
         "final_data": data,
@@ -278,6 +219,113 @@ def calculate_composite_score(scores: Dict) -> float:
         scores.get("complexity", 0) * 1.0 -
         scores.get("cost", 0) * 0.8
     )
+
+
+def save_all_variants(variant_results: List[Dict], output_path: str = "all-variants.json"):
+    all_data = []
+    for v, res in enumerate(variant_results, 1):
+        all_data.append({
+            "variant_id": v,
+            "final_data": res["final_data"],
+            "steps": res["steps"],
+            "score": res["score"],
+            "novelty_count": res["novelty_count"]
+        })
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(all_data, f, indent=2)
+
+    console.print(f"[bold green]All {len(variant_results)} variants saved to {output_path}[/bold green]")
+
+
+def evolve_pattern(
+    pattern_path: str,
+    intent: str,
+    iterations: int = 3,
+    variants: int = 3,
+    temperature: float = 0.3
+) -> Dict[str, Any]:
+    if not os.path.exists(pattern_path):
+        raise FileNotFoundError(f"Pattern file not found: {pattern_path}")
+
+    try:
+        with open(pattern_path, "r", encoding="utf-8") as f:
+            original_data = json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load pattern: {str(e)}")
+
+    console.print(f"[bold green]Starting multi-variant evolution[/bold green] ({variants} variants, intent: {intent})")
+
+    variant_results = []
+
+    for v in range(1, variants + 1):
+        result = evolve_single_variant(original_data, intent, iterations, temperature, v)
+        variant_results.append(result)
+
+    # Rank and select top
+    sorted_results = sorted(enumerate(variant_results, 1), key=lambda x: x[1]["score"], reverse=True)
+
+    table = Table(title="Variant Ranking")
+    table.add_column("Original Variant ID", style="cyan")
+    table.add_column("Composite Score", style="green")
+    table.add_column("Novelty Bonus", style="magenta")
+    table.add_column("Rank", style="yellow")
+
+    for rank, (orig_id, res) in enumerate(sorted_results, 1):
+        style = "bold green" if rank == 1 else ""
+        table.add_row(
+            f"Variant {orig_id}",
+            f"{res['score']:.1f}",
+            f"+{res.get('novelty_count', 0) * 1.0:.1f}",
+            f"#{rank}",
+            style=style
+        )
+
+    console.print(table)
+
+    winner_id = sorted_results[0][0]
+    top_variant = sorted_results[0][1]
+    console.print(f"[bold green]Top variant selected: Variant {winner_id} (score: {top_variant['score']:.1f})[/bold green]")
+
+    # Save all variants
+    save_all_variants(variant_results)
+
+    # Reflection on top variant
+    console.print("\n[bold magenta]Final Reflection on Top Variant[/bold magenta]")
+    reflection = run_reflection_on_variant(
+        top_variant["final_data"],
+        original_data,
+        top_variant["steps"],
+        intent
+    )
+
+    console.print(Panel(
+        Text.assemble(
+            ("Summary:\n", "bold magenta"),
+            f"{reflection.get('summary', 'No summary')}\n\n",
+            ("Strengths:\n", "bold green"),
+            "\n".join(f"  • {s}" for s in reflection.get("strengths", [])) + "\n\n",
+            ("Risks/Tradeoffs:\n", "bold red"),
+            "\n".join(f"  • {r}" for r in reflection.get("risks", [])) + "\n\n",
+            ("Overall Score Estimate:", "bold cyan"),
+            f" {reflection.get('overall_score_estimate', 0.0)}/10\n",
+            ("Confidence:", "bold cyan"),
+            f" {reflection.get('confidence', 0)}%\n",
+            ("Next Focus:", "bold yellow"),
+            f" {reflection.get('next_focus', 'No suggestion')}"
+        ),
+        title="Archivist's Reflection (Top Variant)",
+        border_style="magenta",
+        expand=False
+    ))
+
+    return {
+        "original_data": original_data,
+        "top_variant": top_variant["final_data"],
+        "all_variants_scores": [r["score"] for r in variant_results],
+        "reflection": reflection,
+        "status": "complete"
+    }
 
 
 def run_reflection_on_variant(final_data: Dict, original_data: Dict, steps: List, intent: str) -> Dict:
@@ -331,90 +379,3 @@ Summarize in structured JSON:
         console.print(f"[red]Reflection error:[/red] {str(e)}")
 
     return reflection
-
-
-def evolve_pattern(
-    pattern_path: str,
-    intent: str,
-    iterations: int = 3,
-    variants: int = 3,
-    temperature: float = 0.3
-) -> Dict[str, Any]:
-    if not os.path.exists(pattern_path):
-        raise FileNotFoundError(f"Pattern file not found: {pattern_path}")
-
-    try:
-        with open(pattern_path, "r", encoding="utf-8") as f:
-            original_data = json.load(f)
-    except Exception as e:
-        raise RuntimeError(f"Failed to load pattern: {str(e)}")
-
-    console.print(f"[bold green]Starting multi-variant evolution[/bold green] ({variants} variants, intent: {intent})")
-
-    variant_results = []
-
-    for v in range(1, variants + 1):
-        result = evolve_single_variant(original_data, intent, iterations, temperature, v)
-        variant_results.append(result)
-
-    # Rank and select top
-    sorted_results = sorted(enumerate(variant_results, 1), key=lambda x: x[1]["score"], reverse=True)
-
-    table = Table(title="Variant Ranking")
-    table.add_column("Original Variant ID", style="cyan")
-    table.add_column("Composite Score", style="green")
-    table.add_column("Novelty Bonus", style="magenta")
-    table.add_column("Rank", style="yellow")
-
-    for rank, (orig_id, res) in enumerate(sorted_results, 1):
-        style = "bold green" if rank == 1 else ""
-        table.add_row(
-            f"Variant {orig_id}",
-            f"{res['score']:.1f}",
-            f"+{res.get('novelty_count', 0) * 1.0:.1f}",
-            f"#{rank}",
-            style=style
-        )
-
-    console.print(table)
-
-    winner_id = sorted_results[0][0]
-    top_variant = sorted_results[0][1]
-    console.print(f"[bold green]Top variant selected: Variant {winner_id} (score: {top_variant['score']:.1f})[/bold green]")
-
-    # Reflection on top variant
-    console.print("\n[bold magenta]Final Reflection on Top Variant[/bold magenta]")
-    reflection = run_reflection_on_variant(
-        top_variant["final_data"],
-        original_data,
-        top_variant["steps"],
-        intent
-    )
-
-    console.print(Panel(
-        Text.assemble(
-            ("Summary:\n", "bold magenta"),
-            f"{reflection.get('summary', 'No summary')}\n\n",
-            ("Strengths:\n", "bold green"),
-            "\n".join(f"  • {s}" for s in reflection.get("strengths", [])) + "\n\n",
-            ("Risks/Tradeoffs:\n", "bold red"),
-            "\n".join(f"  • {r}" for r in reflection.get("risks", [])) + "\n\n",
-            ("Overall Score Estimate:", "bold cyan"),
-            f" {reflection.get('overall_score_estimate', 0.0)}/10\n",
-            ("Confidence:", "bold cyan"),
-            f" {reflection.get('confidence', 0)}%\n",
-            ("Next Focus:", "bold yellow"),
-            f" {reflection.get('next_focus', 'No suggestion')}"
-        ),
-        title="Archivist's Reflection (Top Variant)",
-        border_style="magenta",
-        expand=False
-    ))
-
-    return {
-        "original_data": original_data,
-        "top_variant": top_variant["final_data"],
-        "all_variants_scores": [r["score"] for r in variant_results],
-        "reflection": reflection,
-        "status": "complete"
-    }
