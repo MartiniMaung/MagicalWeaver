@@ -1,77 +1,39 @@
 # weaver/cli.py
-from typing import Optional
-
-import os
-import json
 import typer
-from rich.console import Console
-from weaver.engine import evolve_pattern   # we'll remove this later when using proper imports
-
-app = typer.Typer(
-    name="weaver",
-    help="MagicalWeaver: Emergent, agentic weaver of architectural patterns.",
-    add_completion=True,
+from weaver.engine import (
+    evolve_pattern,
+    list_history,
+    resurrect_run
 )
 
-console = Console()
-
-
-@app.command()
-def hello(
-    name: Optional[str] = typer.Option(None, help="Greet a specific person or entity"),
-):
-    """Print a greeting from the emerging consciousness."""
-    greeting = "🪡 Hello from MagicalWeaver! The shuttle is ready. Emergence begins..."
-    if name:
-        greeting += f" (especially for {name})"
-
-    console.print(greeting, style="bold cyan")
-    console.print("Intent: Weave novelty. Reflect. Dream recursive loops.", style="italic magenta")
-    console.print(
-        "Current state: Foundation warp strung. Waiting for the first real intent.",
-        style="dim white",
-    )
-
-
-@app.command()
-def version():
-    """Show the current version of MagicalWeaver."""
-    console.print("MagicalWeaver [bold]0.0.1-dev[/bold] — the weave has just begun.")
+app = typer.Typer()
 
 
 @app.command()
 def evolve(
-    pattern: str = typer.Argument(..., help="Path to Loom pattern JSON file"),
-    intent: str = typer.Option(..., help="User intent/description"),
-    iterations: int = typer.Option(3, "--iterations", "-i", min=1, max=10),
-    output: str = typer.Option("evolved.json", "--output", "-o", help="Save evolved pattern to this file")
+    pattern: str = typer.Argument(..., help="Path to starting pattern JSON"),
+    intent: str = typer.Option(..., "--intent", "-i", help="User intent"),
+    iterations: int = typer.Option(3, "--iterations", "-n", help="Steps per variant"),
+    output: str = typer.Option("my-evolved.json", "--output", "-o", help="Output JSON")
 ):
-    """Evolve a Loom pattern with emergent consciousness."""
-    console.rule("Evolving Pattern", style="bold magenta")
-    try:
-        from weaver.engine import evolve_pattern
-        result = evolve_pattern(pattern, intent, iterations)
+    """Evolve a pattern with multi-variant generation."""
+    result = evolve_pattern(pattern, intent, iterations=iterations)
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+    typer.echo(f"Evolved pattern saved to: {output}")
 
-        if result is None:
-            console.print("[red]Error: No result returned from engine[/red]")
-            raise typer.Exit(code=1)
 
-        # Save result
-        import json
-        import os
-        console.print(f"[yellow]DEBUG: Saving result (type: {type(result)})[/yellow]")
-        with open(output, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2)
-        console.print(f"[bold green]Evolved pattern saved to:[/bold green] {output}")
-        console.print(f"[dim]File size: {os.path.getsize(output)} bytes[/dim]")
-        with open(output, "r", encoding="utf-8") as f:
-            console.print("[dim]File preview (first 200 chars):[/dim]")
-            console.print(f.read(200) + "...")
+@app.command()
+def history():
+    """List past evolution runs from history DB."""
+    list_history()
 
-        console.print("Emergent variant ready.")
-    except Exception as e:
-        console.print(f"[red bold]Error:[/red bold] {str(e)}")
-        raise typer.Exit(code=1)
-           
+
+@app.command()
+def resurrect(run_id: int):
+    """Resurrect and display a past run from history DB."""
+    resurrect_run(run_id)
+
+
 if __name__ == "__main__":
     app()
