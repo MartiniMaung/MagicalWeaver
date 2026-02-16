@@ -58,11 +58,11 @@ def fetch_real_novelty_ideas(intent: str, num_ideas: int = 4) -> List[str]:
     except Exception as e:
         console.print(f"[yellow]Live foraging failed: {str(e)} — fallback to mock[/yellow]")
         fallback = [
-            "Zero-trust with SPIFFE/SPIRE trending in backend stacks",
-            "eBPF observability with Cilium/Falco for runtime security",
-            "Confidential computing (AMD SEV/Intel TDX) for sensitive workloads",
-            "OAuth 2.1 PAR/RAR adoption in APIs",
-            "Rust-based proxies (Linkerd2) in service meshes"
+            "eBPF with Cilium for L7 security in ecommerce APIs",
+            "AMD SEV-SNP & Intel TDX for confidential payment processing",
+            "OAuth 2.1 PAR/RAR/DPoP mandatory for high-security APIs",
+            "Rust Linkerd2-proxy in production service meshes",
+            "Zero-trust with SPIFFE/SPIRE for backend identity"
         ]
         random.shuffle(fallback)
         return fallback[:num_ideas]  
