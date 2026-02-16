@@ -14,6 +14,23 @@ from rich.text import Text
 console = Console()
 
 
+def fetch_novelty_ideas(intent: str, num_ideas: int = 3) -> List[str]:
+    """
+    Simple novelty foraging: return hard-coded or mocked recent ideas.
+    In real Phase 2, this would call web_search or x_keyword_search.
+    """
+    # For now: mocked "recent trends" (replace with real tool calls later)
+    mock_trends = [
+        "Use zero-trust architecture with SPIFFE/SPIRE for identity",
+        "Integrate eBPF for runtime security observability",
+        "Adopt confidential computing with Intel TDX or AMD SEV",
+        "Implement OAuth 2.1 with PAR and RAR for better auth",
+        "Use Rust-based proxies like Linkerd2-proxy for service mesh"
+    ]
+    random.shuffle(mock_trends)
+    return mock_trends[:num_ideas]
+
+
 def summarize_pattern(d: Dict) -> str:
     summary = []
     if "components" in d:
@@ -95,7 +112,11 @@ def evolve_single_variant(
         "add Istio service mesh"
     ]
 
+    # Novelty foraging: get fresh ideas
+    novelty_ideas = fetch_novelty_ideas(intent)
+    novelty_text = "\n".join(f"- {idea}" for idea in novelty_ideas)
     console.print(f"[bold cyan]Variant {variant_id} starting...[/bold cyan]")
+    console.print(f"[dim]Novelty inspiration:[/dim]\n{novelty_text}")
 
     for step_num in range(1, iterations + 1):
         prompt = f"""
@@ -107,6 +128,9 @@ User intent: {intent}
 
 Previous mutations:
 {json.dumps(steps, indent=2) if steps else "None yet"}
+
+Recent trends & inspiration ideas (use them to inspire ONE focused mutation):
+{novelty_text}
 
 Suggest ONE focused, realistic next mutation.
 
@@ -240,134 +264,6 @@ Summarize in structured JSON:
     return reflection
 
 
-def generate_visual_diff(original: Dict, top: Dict) -> Table:
-    table = Table(title="Original vs Top Variant Diff")
-    table.add_column("Component/Score", style="cyan")
-    table.add_column("Original", style="white")
-    table.add_column("Top Variant", style="green")
-    table.add_column("Change", style="yellow")
-
-    # Components diff
-    all_components = set(original.get("components", {}).keys()) | set(top.get("components", {}).keys())
-    for comp in sorted(all_components):
-        orig_val = original.get("components", {}).get(comp, "-")
-        top_val = top.get("components", {}).get(comp, "-")
-        if orig_val == "-":
-            change = "[green]+ Added[/green]"
-        elif top_val == "-":
-            change = "[red]- Removed[/red]"
-        elif orig_val != top_val:
-            change = f"[yellow]→ {top_val}[/yellow]"
-        else:
-            change = "-"
-        table.add_row(f"Component: {comp}", str(orig_val), str(top_val), change)
-
-    # Scores diff
-    all_scores = set(original.get("scores", {}).keys()) | set(top.get("scores", {}).keys())
-    for score in sorted(all_scores):
-        orig_val = original.get("scores", {}).get(score, 0.0)
-        top_val = top.get("scores", {}).get(score, 0.0)
-        delta = top_val - orig_val
-        if delta > 0:
-            change = f"[green]+{delta:.1f}[/green]"
-        elif delta < 0:
-            change = f"[red]{delta:.1f}[/red]"
-        else:
-            change = "-"
-        table.add_row(f"Score: {score}", f"{orig_val:.1f}", f"{top_val:.1f}", change)
-
-    return table
-
-
-def save_markdown_report(
-    original_data: Dict,
-    top_variant: Dict,
-    all_variants_scores: List[float],
-    reflection: Dict,
-    intent: str,
-    iterations: int,
-    variants: int
-):
-    report = f"""# MagicalWeaver Evolution Report
-
-**Intent**: {intent}
-**Iterations per variant**: {iterations}
-**Variants generated**: {variants}
-
-## Variant Ranking
-| Original Variant ID | Composite Score | Rank |
-|---------------------|-----------------|------|
-"""
-
-    # Add ranking rows (you can copy from table logic if needed)
-    for i, score in enumerate(sorted(all_variants_scores, reverse=True), 1):
-        report += f"| Variant {i} | {score:.1f} | #{i} |\n"
-
-    report += f"""
-
-## Top Variant Selected
-**Score**: {max(all_variants_scores):.1f}
-
-## Visual Diff: Original vs Top Variant
-
-| Component/Score | Original | Top Variant | Change |
-|-----------------|----------|-------------|--------|
-"""
-
-    # Add diff rows
-    all_components = set(original_data.get("components", {}).keys()) | set(top_variant.get("components", {}).keys())
-    for comp in sorted(all_components):
-        orig_val = original_data.get("components", {}).get(comp, "-")
-        top_val = top_variant.get("components", {}).get(comp, "-")
-        if orig_val == "-":
-            change = "+ Added"
-        elif top_val == "-":
-            change = "- Removed"
-        elif orig_val != top_val:
-            change = f"→ {top_val}"
-        else:
-            change = "-"
-        report += f"| Component: {comp} | {orig_val} | {top_val} | {change} |\n"
-
-    all_scores = set(original_data.get("scores", {}).keys()) | set(top_variant.get("scores", {}).keys())
-    for score in sorted(all_scores):
-        orig_val = original_data.get("scores", {}).get(score, 0.0)
-        top_val = top_variant.get("scores", {}).get(score, 0.0)
-        delta = top_val - orig_val
-        change = f"{delta:+.1f}" if delta != 0 else "-"
-        report += f"| Score: {score} | {orig_val:.1f} | {top_val:.1f} | {change} |\n"
-
-    report += f"""
-
-## Archivist's Reflection on Top Variant
-
-**Summary**  
-{reflection.get('summary', 'No summary')}
-
-**Strengths**  
-{chr(10).join(f"- {s}" for s in reflection.get('strengths', [])) or '- None'}
-
-**Risks/Tradeoffs**  
-{chr(10).join(f"- {r}" for r in reflection.get('risks', [])) or '- None'}
-
-**Overall Score Estimate**  
-{reflection.get('overall_score_estimate', 0.0)}/10
-
-**Confidence**  
-{reflection.get('confidence', 0)}%
-
-**Next Focus**  
-{reflection.get('next_focus', 'No suggestion')}
-
-Generated on {time.strftime("%Y-%m-%d %H:%M:%S")}
-"""
-
-    with open("evolution_report.md", "w", encoding="utf-8") as f:
-        f.write(report)
-
-    console.print("[bold green]Markdown report saved: evolution_report.md[/bold green]")
-
-
 def evolve_pattern(
     pattern_path: str,
     intent: str,
@@ -415,10 +311,6 @@ def evolve_pattern(
     top_variant = sorted_results[0][1]
     console.print(f"[bold green]Top variant selected: Variant {winner_id} (score: {top_variant['score']:.1f})[/bold green]")
 
-    # Visual diff
-    diff_table = generate_visual_diff(original_data, top_variant["final_data"])
-    console.print(diff_table)
-
     # Reflection on top variant
     console.print("\n[bold magenta]Final Reflection on Top Variant[/bold magenta]")
     reflection = run_reflection_on_variant(
@@ -447,17 +339,6 @@ def evolve_pattern(
         border_style="magenta",
         expand=False
     ))
-
-    # Save Markdown report
-    save_markdown_report(
-        original_data,
-        top_variant["final_data"],
-        [r["score"] for r in variant_results],
-        reflection,
-        intent,
-        iterations,
-        variants
-    )
 
     return {
         "original_data": original_data,
